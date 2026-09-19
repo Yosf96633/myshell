@@ -11,17 +11,19 @@ changes with a clear purpose are easiest to review.
 4. Add or update tests when a test target becomes available.
 5. Update the README or roadmap when behavior or project scope changes.
 
-Until all sources listed in `CMakeLists.txt` are present, compile the implemented
-prototype directly:
+Until the CMake source list is updated, compile the implemented prototype
+directly:
 
 ```bash
 g++ -std=c++20 -Wall -Wextra -Wpedantic -Iinclude \
-    src/main.cpp src/tokenizer.cpp \
+    src/main.cpp src/prompt.cpp src/reader.cpp src/tokenizer.cpp \
     -o myshell
 ./myshell
 ```
 
-After the reader and shell components are added, use the CMake build:
+Before using the CMake build, add `src/prompt.cpp` to the executable target and
+either add the planned `src/shell.cpp` component or remove that entry until it
+exists. The intended build commands are:
 
 ```bash
 cmake -S . -B build
@@ -43,8 +45,11 @@ There is no automated test suite yet. For now, contributors should:
 
 - compile with `-Wall -Wextra -Wpedantic`;
 - run the executable and verify its output;
-- manually check empty input, repeated whitespace, and multiple arguments when
-  changing the tokenizer.
+- check that the prompt contains the current username, hostname, and directory;
+- check that prompt colors reset correctly in a compatible terminal;
+- check that an empty line displays a fresh prompt;
+- check that `Ctrl+D` exits cleanly;
+- check repeated whitespace and multiple arguments when changing the tokenizer.
 
 Adding a CTest-based test target is an especially useful contribution; it is
 also tracked in the [roadmap](docs/ROADMAP.md).

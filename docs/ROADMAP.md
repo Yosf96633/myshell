@@ -7,8 +7,13 @@ a fixed release schedule.
 
 - [x] Create a C++20 project structure.
 - [x] Split a simple command line on whitespace.
-- [ ] Read commands interactively until end-of-file or `exit`.
-- [ ] Complete the reader and shell source files referenced by CMake.
+- [x] Display an interactive prompt and read commands until end-of-file.
+- [x] Show the username, hostname, and working directory in a colored prompt.
+- [x] Ignore empty input and display a fresh prompt.
+- [x] Complete the reader component referenced by CMake.
+- [ ] Add the prompt component to the CMake target.
+- [ ] Add the shell source file referenced by CMake.
+- [ ] Exit when the user enters the `exit` built-in.
 - [ ] Add automated tokenizer and parser tests with CTest.
 
 ## Command parsing

@@ -1,27 +1,37 @@
 # myShell
 
-`myShell` is an early-stage Unix-like shell written in C++20. The project is
-currently focused on building the command-processing pipeline one piece at a
-time, beginning with tokenizing a command line into arguments.
+`myShell` is an early-stage Unix-like shell written in C++20. It currently
+provides a colored, context-aware prompt, reads commands one line at a time,
+and splits each non-empty line into whitespace-separated tokens.
 
 ## Current status
 
-The current executable tokenizes the hard-coded command `ls -la /tmp` and
-prints the resulting tokens:
+The current executable repeatedly displays a prompt containing the username,
+hostname, and current working directory. The `user@host` portion is green and
+the path is blue in a compatible terminal. Each entered line is then tokenized
+and printed:
 
 ```text
+$ ./myshell
+yosf@computer:/home/yosf/Desktop/my-shell$ ls -la /tmp
 parsed 3 token(s): [ls] [-la] [/tmp]
+yosf@computer:/home/yosf/Desktop/my-shell$
 ```
 
-Interactive input, command execution, quoting, pipes, redirection, and job
-control are not implemented yet. See the [roadmap](docs/ROADMAP.md) for the
-planned direction.
+The exact username, hostname, and path depend on the current environment.
+
+Pressing Enter on an empty line displays another prompt. Pressing `Ctrl+D`
+sends end-of-file and exits the program cleanly.
+
+The program does not execute commands yet. Quoting, escaping, built-ins, pipes,
+redirection, and job control are also not implemented. See the
+[roadmap](docs/ROADMAP.md) for the planned direction.
 
 ## Requirements
 
 - A C++20-compatible compiler (GCC 10+, Clang 10+, or equivalent)
 - CMake 3.16 or newer for the planned CMake workflow
-- A Unix-like environment for future process-management features
+- A Unix-like environment providing `gethostname()` and `getcwd()`
 
 ## Build and run
 
@@ -29,15 +39,14 @@ At this stage, build the implemented sources directly:
 
 ```bash
 g++ -std=c++20 -Wall -Wextra -Iinclude \
-    src/main.cpp src/tokenizer.cpp \
+    src/main.cpp src/prompt.cpp src/reader.cpp src/tokenizer.cpp \
     -o myshell
 ./myshell
 ```
 
-The `CMakeLists.txt` already describes the intended application structure, but
-it also references `src/reader.cpp` and `src/shell.cpp`, which have not been
-added yet. Once those components exist, the standard out-of-source workflow
-will be:
+The CMake target is not complete yet: `CMakeLists.txt` references the missing
+`src/shell.cpp` and does not yet list `src/prompt.cpp`. After the source list is
+brought up to date, the standard out-of-source workflow will be:
 
 ```bash
 cmake -S . -B build
@@ -51,16 +60,23 @@ cmake --build build
 .
 ├── CMakeLists.txt
 ├── include/myshell/
+│   ├── prompt.hpp
 │   ├── reader.hpp
 │   └── tokenizer.hpp
 ├── src/
 │   ├── main.cpp
+│   ├── prompt.cpp
+│   ├── reader.cpp
 │   └── tokenizer.cpp
 └── docs/
     └── ROADMAP.md
 ```
 
-- `src/main.cpp` is the current program entry point.
+- `src/main.cpp` runs the interactive read-and-tokenize loop.
+- `src/prompt.cpp` builds the colored prompt from the user, host, and current
+  directory.
+- `src/reader.cpp` displays a supplied prompt and reads a line, using an empty
+  `std::optional` to signal end-of-file.
 - `src/tokenizer.cpp` contains the initial whitespace-based tokenizer.
 - `include/myshell/` contains public declarations for shell components.
 

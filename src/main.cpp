@@ -1,14 +1,15 @@
 #include "myshell/reader.hpp"
 #include "myshell/tokenizer.hpp"
+#include "myshell/prompt.hpp"
 #include <iostream>
-
+using namespace std;
 int main() {
     while (true) {   // repeat forever until we break
 
-        auto line = read_line("myshell> ");
+        auto line = read_line(build_prompt());
 
         if (!line) {           // Ctrl+D was pressed
-            std::cout << "\n";
+            cout << "\n";
             break;              // exit the loop, end the program
         }
 
@@ -16,13 +17,13 @@ int main() {
             continue;           // skip to next loop iteration, re-prompt
         }
 
-        std::vector<std::string> tokens = tokenize(*line);
+        vector<string> tokens = tokenize(*line);
 
-        std::cout << "parsed " << tokens.size() << " token(s):";
+        cout << "parsed " << tokens.size() << " token(s):";
         for (const auto& t : tokens) {
-            std::cout << " [" << t << "]";
+            cout << " [" << t << "]";
         }
-        std::cout << "\n";
+        cout << "\n";
     }
 
     return 0;
