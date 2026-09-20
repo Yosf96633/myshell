@@ -18,8 +18,8 @@ a fixed release schedule.
 
 ## Command parsing
 
-- [ ] Preserve quoted strings as single arguments.
-- [ ] Support escaped characters.
+- [x] Preserve quoted strings as single arguments.
+- [x] Support escaped characters.
 - [ ] Parse environment-variable expansion.
 - [ ] Represent commands with a dedicated parsed-command type.
 - [ ] Report incomplete quotes and other syntax errors clearly.
@@ -34,6 +34,9 @@ a fixed release schedule.
 - [x] Implement the `exit` builtin.
 - [x] Search for executables using `PATH`.
 - [x] Cache executable paths and expose them through a `hash` builtin.
+- [x] Report command resolution with a `type` builtin.
+- [x] Define, display, and expand command aliases.
+- [x] Display builtin documentation with a `help` builtin.
 - [ ] Handle common process and system-call failures.
 
 ## Shell features

@@ -1,14 +1,47 @@
 #include "myshell/builtins.hpp"
 #include "myshell/path_search.hpp"
+#include "myshell/tokenizer.hpp"
 #include <unistd.h>   // chdir
+#include <fnmatch.h>  // fnmatch
 #include <algorithm>
 #include <iostream>
 #include <cstdlib>      // getenv
 #include <climits>      // PATH_MAX
 #include <iomanip>
+#include <unordered_set>
 using namespace std;
 
 namespace {
+
+unordered_map<string, string> aliases;
+
+string shell_quote(const string& value) {
+    string quoted = "'";
+    for (char character : value) {
+        if (character == '\'') {
+            quoted += "'\\''";
+        } else {
+            quoted += character;
+        }
+    }
+    quoted += '\'';
+    return quoted;
+}
+
+vector<string> sorted_alias_names() {
+    vector<string> names;
+    names.reserve(aliases.size());
+    for (const auto& [name, value] : aliases) {
+        (void)value;
+        names.push_back(name);
+    }
+    sort(names.begin(), names.end());
+    return names;
+}
+
+void print_alias(const string& name) {
+    cout << "alias " << name << '=' << shell_quote(aliases.at(name)) << '\n';
+}
 
 vector<string> sorted_cache_names() {
     vector<string> names;
@@ -176,7 +209,344 @@ int builtin_hash(const vector<string>& args) {
     return 0;
 }
 
+int builtin_alias(const vector<string>& args) {
+    bool print_all = args.empty();
+    size_t argument_index = 0;
+
+    while (argument_index < args.size()) {
+        const string& arg = args[argument_index];
+        if (arg == "--") {
+            ++argument_index;
+            break;
+        }
+        if (arg.size() < 2 || arg[0] != '-' || arg == "-") {
+            break;
+        }
+
+        for (size_t i = 1; i < arg.size(); ++i) {
+            if (arg[i] != 'p') {
+                cerr << "alias: -" << arg[i] << ": invalid option\n"
+                     << "alias: usage: alias [-p] [name[=value] ... ]\n";
+                return 2;
+            }
+            print_all = true;
+        }
+        ++argument_index;
+    }
+
+    if (print_all) {
+        for (const auto& name : sorted_alias_names()) {
+            print_alias(name);
+        }
+    }
+
+    int status = 0;
+    for (; argument_index < args.size(); ++argument_index) {
+        const string& arg = args[argument_index];
+        const size_t equals = arg.find('=');
+        if (equals != string::npos) {
+            const string name = arg.substr(0, equals);
+            const string value = arg.substr(equals + 1);
+            const string invalid_characters = "/$`=|&;()<> \t\r\n'\"";
+
+            if (name.empty() || name.find_first_of(invalid_characters) != string::npos) {
+                cerr << "alias: `" << name << "': invalid alias name\n";
+                status = 1;
+                continue;
+            }
+            aliases[name] = value;
+            continue;
+        }
+
+        auto alias = aliases.find(arg);
+        if (alias == aliases.end()) {
+            cerr << "alias: " << arg << ": not found\n";
+            status = 1;
+        } else {
+            print_alias(arg);
+        }
+    }
+
+    return status;
+}
+
+void print_type_alias(const string& name) {
+    cout << name << " is aliased to `" << aliases.at(name) << "'\n";
+}
+
+int builtin_type(const vector<string>& args) {
+    bool show_all = false;
+    bool path_only = false;
+    bool force_path = false;
+    bool type_word = false;
+    vector<string> names;
+
+    bool parsing_options = true;
+    for (size_t i = 0; i < args.size(); ++i) {
+        const string& arg = args[i];
+        if (parsing_options && arg == "--") {
+            parsing_options = false;
+            continue;
+        }
+        if (!parsing_options || arg.size() < 2 || arg[0] != '-' || arg == "-") {
+            names.insert(names.end(), args.begin() + static_cast<ptrdiff_t>(i), args.end());
+            break;
+        }
+
+        for (size_t option_index = 1; option_index < arg.size(); ++option_index) {
+            switch (arg[option_index]) {
+            case 'a':
+                show_all = true;
+                break;
+            case 'f':
+                break; // Shell functions are not implemented yet.
+            case 'p':
+                path_only = true;
+                break;
+            case 'P':
+                force_path = true;
+                break;
+            case 't':
+                type_word = true;
+                break;
+            default:
+                cerr << "type: -" << arg[option_index] << ": invalid option\n"
+                     << "type: usage: type [-afptP] name [name ...]\n";
+                return 2;
+            }
+        }
+    }
+
+    int status = 0;
+    for (const auto& name : names) {
+        const bool is_alias = aliases.count(name) > 0;
+        const bool is_shell_builtin = is_builtin(name);
+        const vector<string> paths = show_all
+            ? find_all_command_paths(name)
+            : vector<string>{};
+        const auto first_path = show_all ? optional<string>{} : find_command_path(name);
+        const bool has_file = show_all ? !paths.empty() : first_path.has_value();
+
+        if (force_path) {
+            if (!has_file) {
+                status = 1;
+                continue;
+            }
+            if (show_all) {
+                for (const auto& path : paths) {
+                    cout << path << '\n';
+                }
+            } else {
+                cout << *first_path << '\n';
+            }
+            continue;
+        }
+
+        if (!is_alias && !is_shell_builtin && !has_file) {
+            if (!type_word && !path_only) {
+                cerr << "type: " << name << ": not found\n";
+            }
+            status = 1;
+            continue;
+        }
+
+        if (type_word) {
+            if (show_all) {
+                if (is_alias) cout << "alias\n";
+                if (is_shell_builtin) cout << "builtin\n";
+                for (size_t i = 0; i < paths.size(); ++i) cout << "file\n";
+            } else if (is_alias) {
+                cout << "alias\n";
+            } else if (is_shell_builtin) {
+                cout << "builtin\n";
+            } else {
+                cout << "file\n";
+            }
+            continue;
+        }
+
+        if (path_only) {
+            if (show_all) {
+                for (const auto& path : paths) {
+                    cout << path << '\n';
+                }
+            } else if (!is_alias && !is_shell_builtin && first_path) {
+                cout << *first_path << '\n';
+            }
+            continue;
+        }
+
+        if (show_all) {
+            if (is_alias) {
+                print_type_alias(name);
+            }
+            if (is_shell_builtin) {
+                cout << name << " is a shell builtin\n";
+            }
+            for (const auto& path : paths) {
+                cout << name << " is " << path << '\n';
+            }
+        } else if (is_alias) {
+            print_type_alias(name);
+        } else if (is_shell_builtin) {
+            cout << name << " is a shell builtin\n";
+        } else {
+            cout << name << " is " << *first_path << '\n';
+        }
+    }
+
+    return status;
+}
+
+struct BuiltinHelp {
+    string name;
+    string synopsis;
+    string summary;
+    string details;
+};
+
+const vector<BuiltinHelp>& help_topics() {
+    static const vector<BuiltinHelp> topics = {
+        {"alias", "alias [-p] [name[=value] ...]", "Define or display aliases.",
+         "Without arguments or with -p, display aliases in reusable form. "
+         "An assignment defines an alias; a name by itself displays it."},
+        {"cd", "cd directory", "Change the current working directory.",
+         "Change the shell's working directory to DIRECTORY."},
+        {"echo", "echo [argument ...]", "Write arguments to standard output.",
+         "Display the arguments separated by one space, followed by a newline."},
+        {"exit", "exit", "Exit the shell.",
+         "Stop the interactive shell."},
+        {"hash", "hash [-lr] [-p pathname] [-dt] [name ...]",
+         "Remember or display program locations.",
+         "Options: -d deletes names, -l prints reusable commands, -p assigns a "
+         "pathname, -r clears the table, and -t prints cached paths."},
+        {"help", "help [-dms] [pattern ...]", "Display information about builtin commands.",
+         "Options: -d prints a short description, -m uses manpage-style output, "
+         "and -s prints only the synopsis."},
+        {"pwd", "pwd", "Print the current working directory.",
+         "Write the absolute pathname of the current working directory."},
+        {"type", "type [-afptP] name [name ...]", "Display information about command type.",
+         "Options: -a shows all matches, -f suppresses function lookup, -p prints "
+         "a command path, -P forces PATH lookup, and -t prints the type word."},
+    };
+    return topics;
+}
+
+bool help_topic_matches(const string& pattern, const string& topic_name) {
+    const bool has_glob = pattern.find_first_of("*?[") != string::npos;
+    return fnmatch(pattern.c_str(), topic_name.c_str(), 0) == 0
+        || (!has_glob && topic_name.rfind(pattern, 0) == 0);
+}
+
+vector<const BuiltinHelp*> matching_help_topics(const vector<string>& patterns) {
+    vector<const BuiltinHelp*> matches;
+    for (const auto& topic : help_topics()) {
+        if (patterns.empty() || any_of(patterns.begin(), patterns.end(), [&](const string& pattern) {
+                return help_topic_matches(pattern, topic.name);
+            })) {
+            matches.push_back(&topic);
+        }
+    }
+    return matches;
+}
+
+int builtin_help(const vector<string>& args) {
+    bool description_only = false;
+    bool manpage = false;
+    bool synopsis_only = false;
+    vector<string> patterns;
+
+    bool parsing_options = true;
+    for (size_t i = 0; i < args.size(); ++i) {
+        const string& arg = args[i];
+        if (parsing_options && arg == "--") {
+            parsing_options = false;
+            continue;
+        }
+        if (!parsing_options || arg.size() < 2 || arg[0] != '-' || arg == "-") {
+            patterns.insert(patterns.end(), args.begin() + static_cast<ptrdiff_t>(i), args.end());
+            break;
+        }
+
+        for (size_t option_index = 1; option_index < arg.size(); ++option_index) {
+            switch (arg[option_index]) {
+            case 'd': description_only = true; break;
+            case 'm': manpage = true; break;
+            case 's': synopsis_only = true; break;
+            default:
+                cerr << "help: -" << arg[option_index] << ": invalid option\n"
+                     << "help: usage: help [-dms] [pattern ...]\n";
+                return 2;
+            }
+        }
+    }
+
+    int status = 0;
+    for (const auto& pattern : patterns) {
+        const bool found = any_of(help_topics().begin(), help_topics().end(),
+            [&](const BuiltinHelp& topic) {
+                return help_topic_matches(pattern, topic.name);
+            });
+        if (!found) {
+            cerr << "help: no help topics match `" << pattern
+                 << "'. Try `help help'.\n";
+            status = 1;
+        }
+    }
+
+    const auto matches = matching_help_topics(patterns);
+    if (matches.empty()) {
+        return status;
+    }
+
+    if (patterns.empty() && !description_only && !manpage && !synopsis_only) {
+        cout << "myShell builtins (use `help name' for details):\n";
+        for (const auto* topic : matches) {
+            cout << "  " << topic->synopsis << '\n';
+        }
+        return status;
+    }
+
+    for (size_t i = 0; i < matches.size(); ++i) {
+        const auto& topic = *matches[i];
+        if (i > 0 && manpage) {
+            cout << '\n';
+        }
+
+        if (manpage) {
+            cout << "NAME\n    " << topic.name << " - " << topic.summary
+                 << "\n\nSYNOPSIS\n    " << topic.synopsis
+                 << "\n\nDESCRIPTION\n    " << topic.details << '\n';
+        } else if (synopsis_only) {
+            cout << topic.name << ": " << topic.synopsis << '\n';
+        } else if (description_only) {
+            cout << topic.name << " - " << topic.summary << '\n';
+        } else {
+            cout << topic.name << ": " << topic.synopsis << '\n'
+                 << "    " << topic.summary << '\n'
+                 << "    " << topic.details << '\n';
+        }
+    }
+    return status;
+}
+
 } // namespace
+
+void expand_aliases(vector<string>& tokens) {
+    unordered_set<string> expanded_names;
+
+    while (!tokens.empty()) {
+        auto alias = aliases.find(tokens.front());
+        if (alias == aliases.end() || expanded_names.count(alias->first) > 0) {
+            break;
+        }
+
+        expanded_names.insert(alias->first);
+        vector<string> replacement = tokenize(alias->second);
+        replacement.insert(replacement.end(), tokens.begin() + 1, tokens.end());
+        tokens = move(replacement);
+    }
+}
 
 // The actual cd implementation
 int builtin_cd(const std::vector<std::string>& args) {
@@ -228,6 +598,9 @@ std::unordered_map<std::string, BuiltinFunc> builtins = {
     {"echo", builtin_echo},
     {"exit", builtin_exit},
     {"hash", builtin_hash},
+    {"type", builtin_type},
+    {"alias", builtin_alias},
+    {"help", builtin_help},
 };
 
 bool is_builtin(const std::string& name) {

@@ -20,3 +20,6 @@ bool is_builtin(const string& name);
 
 // Runs the builtin named `name`, passing `args`. Returns its exit status.
 int run_builtin(const string& name, const vector<string>& args);
+
+// Replace the command word with its alias value, following chained aliases.
+void expand_aliases(vector<string>& tokens);

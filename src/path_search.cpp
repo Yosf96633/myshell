@@ -79,3 +79,49 @@ optional<string> cache_command(const string& command) {
     }
     return resolved;
 }
+
+optional<string> find_command_path(const string& command) {
+    auto cached = path_cache.find(command);
+    if (cached != path_cache.end()) {
+        return cached->second.path;
+    }
+    return search_path(command);
+}
+
+vector<string> find_all_command_paths(const string& command) {
+    vector<string> matches;
+
+    if (command.find('/') != string::npos) {
+        if (is_executable_file(command)) {
+            matches.push_back(command);
+        }
+        return matches;
+    }
+
+    const char* path_env = getenv("PATH");
+    if (path_env == nullptr) {
+        return matches;
+    }
+
+    const string path_list(path_env);
+    size_t component_start = 0;
+    while (true) {
+        const size_t component_end = path_list.find(':', component_start);
+        string dir = path_list.substr(component_start, component_end - component_start);
+        if (dir.empty()) {
+            dir = ".";
+        }
+
+        string full_path = dir + "/" + command;
+        if (is_executable_file(full_path)) {
+            matches.push_back(full_path);
+        }
+
+        if (component_end == string::npos) {
+            break;
+        }
+        component_start = component_end + 1;
+    }
+
+    return matches;
+}

@@ -26,6 +26,10 @@ int main()
         }
 
         vector<string> tokens = tokenize(*line);
+        expand_aliases(tokens);
+        if (tokens.empty()) {
+            continue;
+        }
         string command = tokens[0];
         vector<string> args(tokens.begin() + 1, tokens.end()); // everything except tokens[0]
 

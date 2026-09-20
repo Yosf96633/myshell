@@ -33,16 +33,24 @@ The exact username, hostname, and path depend on the current environment.
 | `echo [arguments...]` | Prints its arguments separated by spaces. |
 | `exit` | Exits the shell. |
 | `hash [options] [name ...]` | Displays or modifies the external-command path cache. |
+| `type [options] name...` | Reports whether names are aliases, builtins, or executable files. |
+| `alias [-p] [name[=value] ...]` | Defines or displays command aliases. |
+| `help [-dms] [pattern ...]` | Displays help for supported builtins. |
 
 The `hash` builtin supports Bash-style `-d`, `-l`, `-p pathname`, `-r`, and
 `-t` options. Its default display includes both the cached path and its hit
 count.
 
+`type` supports `-a`, `-f`, `-p`, `-P`, and `-t`; `alias` supports `-p`; and
+`help` supports `-d`, `-m`, and `-s`. Alias values may contain multiple words
+when quoted, for example `alias ll='ls -l'`.
+
 Pressing Enter on an empty line displays another prompt. Pressing `Ctrl+D`
 sends end-of-file and also exits the program cleanly.
 
 External commands are resolved using `PATH`, cached, and executed in a child
-process. Quoting, escaping, pipes, redirection, and job control are not yet
+process. Basic single quotes, double quotes, and backslash escaping are
+supported. Pipes, redirection, variable expansion, and job control are not yet
 implemented. See the [roadmap](docs/ROADMAP.md) for the planned direction.
 
 ## Requirements
@@ -94,15 +102,16 @@ g++ -std=c++20 -Wall -Wextra -Iinclude \
 ```
 
 - `src/main.cpp` runs the interactive loop and dispatches commands.
-- `src/builtins.cpp` registers and implements `cd`, `pwd`, `echo`, `exit`, and
-  `hash`.
+- `src/builtins.cpp` registers and implements `cd`, `pwd`, `echo`, `exit`,
+  `hash`, `type`, `alias`, and `help`, and performs alias expansion.
 - `src/path_search.cpp` resolves external commands and maintains their cached
   paths and hit counts.
 - `src/prompt.cpp` builds the colored prompt from the user, host, and current
   directory.
 - `src/reader.cpp` displays a supplied prompt and reads a line, using an empty
   `std::optional` to signal end-of-file.
-- `src/tokenizer.cpp` contains the initial whitespace-based tokenizer.
+- `src/tokenizer.cpp` splits command lines while respecting basic quotes and
+  backslash escapes.
 - `include/myshell/` contains public declarations for shell components.
 
 ## Contributing
