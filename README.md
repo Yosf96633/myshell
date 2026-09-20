@@ -2,20 +2,23 @@
 
 `myShell` is an early-stage Unix-like shell written in C++20. It currently
 provides a colored, context-aware prompt, reads commands one line at a time,
-and splits each non-empty line into whitespace-separated tokens.
+splits each non-empty line into whitespace-separated tokens, and supports a
+small builtin-command system.
 
 ## Current status
 
-The current executable repeatedly displays a prompt containing the username,
-hostname, and current working directory. The `user@host` portion is green and
-the path is blue in a compatible terminal. Each entered line is then tokenized
-and printed:
+The executable repeatedly displays a prompt containing the username, hostname,
+and current working directory. The `user@host` portion is green and the path is
+blue in a compatible terminal. Each entered line is tokenized and printed.
+
+The `cd` builtin changes the shell's working directory, which is reflected in
+the next prompt:
 
 ```text
 $ ./myshell
-yosf@computer:/home/yosf/Desktop/my-shell$ ls -la /tmp
-parsed 3 token(s): [ls] [-la] [/tmp]
-yosf@computer:/home/yosf/Desktop/my-shell$
+yosf@computer:/home/yosf/Desktop/my-shell$ cd /tmp
+parsed 2 token(s): [cd] [/tmp]
+yosf@computer:/tmp$
 ```
 
 The exact username, hostname, and path depend on the current environment.
@@ -23,35 +26,35 @@ The exact username, hostname, and path depend on the current environment.
 Pressing Enter on an empty line displays another prompt. Pressing `Ctrl+D`
 sends end-of-file and exits the program cleanly.
 
-The program does not execute commands yet. Quoting, escaping, built-ins, pipes,
-redirection, and job control are also not implemented. See the
-[roadmap](docs/ROADMAP.md) for the planned direction.
+External commands are recognized as non-builtins but are not executed yet. For
+example, entering `ls` prints `not a builtin (yet): ls`. Quoting, escaping,
+additional builtins, pipes, redirection, and job control are also not
+implemented. See the [roadmap](docs/ROADMAP.md) for the planned direction.
 
 ## Requirements
 
 - A C++20-compatible compiler (GCC 10+, Clang 10+, or equivalent)
 - CMake 3.16 or newer for the planned CMake workflow
-- A Unix-like environment providing `gethostname()` and `getcwd()`
+- A Unix-like environment providing `gethostname()`, `getcwd()`, and `chdir()`
 
 ## Build and run
 
-At this stage, build the implemented sources directly:
-
-```bash
-g++ -std=c++20 -Wall -Wextra -Iinclude \
-    src/main.cpp src/prompt.cpp src/reader.cpp src/tokenizer.cpp \
-    -o myshell
-./myshell
-```
-
-The CMake target is not complete yet: `CMakeLists.txt` references the missing
-`src/shell.cpp` and does not yet list `src/prompt.cpp`. After the source list is
-brought up to date, the standard out-of-source workflow will be:
+Configure and build the project out of source with CMake:
 
 ```bash
 cmake -S . -B build
 cmake --build build
 ./build/myshell
+```
+
+Alternatively, compile all sources directly:
+
+```bash
+g++ -std=c++20 -Wall -Wextra -Iinclude \
+    src/main.cpp src/builtins.cpp src/prompt.cpp \
+    src/reader.cpp src/tokenizer.cpp \
+    -o myshell
+./myshell
 ```
 
 ## Project layout
@@ -60,10 +63,12 @@ cmake --build build
 .
 ├── CMakeLists.txt
 ├── include/myshell/
+│   ├── builtins.hpp
 │   ├── prompt.hpp
 │   ├── reader.hpp
 │   └── tokenizer.hpp
 ├── src/
+│   ├── builtins.cpp
 │   ├── main.cpp
 │   ├── prompt.cpp
 │   ├── reader.cpp
@@ -72,7 +77,8 @@ cmake --build build
     └── ROADMAP.md
 ```
 
-- `src/main.cpp` runs the interactive read-and-tokenize loop.
+- `src/main.cpp` runs the interactive loop and dispatches builtin commands.
+- `src/builtins.cpp` registers builtins and implements `cd`.
 - `src/prompt.cpp` builds the colored prompt from the user, host, and current
   directory.
 - `src/reader.cpp` displays a supplied prompt and reads a line, using an empty

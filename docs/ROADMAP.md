@@ -11,8 +11,8 @@ a fixed release schedule.
 - [x] Show the username, hostname, and working directory in a colored prompt.
 - [x] Ignore empty input and display a fresh prompt.
 - [x] Complete the reader component referenced by CMake.
-- [ ] Add the prompt component to the CMake target.
-- [ ] Add the shell source file referenced by CMake.
+- [x] Include every implemented component in the CMake target.
+- [x] Add a registry for dispatching builtin commands.
 - [ ] Exit when the user enters the `exit` built-in.
 - [ ] Add automated tokenizer and parser tests with CTest.
 
@@ -28,7 +28,9 @@ a fixed release schedule.
 
 - [ ] Launch external programs with arguments.
 - [ ] Return useful exit statuses.
-- [ ] Implement built-ins such as `cd`, `pwd`, and `exit`.
+- [x] Implement the `cd` builtin.
+- [ ] Implement the `pwd` builtin.
+- [ ] Implement the `exit` builtin.
 - [ ] Search for executables using `PATH`.
 - [ ] Handle common process and system-call failures.
 

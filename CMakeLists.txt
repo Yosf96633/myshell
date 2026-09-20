@@ -9,7 +9,8 @@ add_executable(myshell
     src/main.cpp
     src/reader.cpp
     src/tokenizer.cpp
-    src/shell.cpp
+    src/prompt.cpp
+    src/builtins.cpp
 )
 
 target_include_directories(myshell PRIVATE include)
