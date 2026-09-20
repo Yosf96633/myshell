@@ -26,13 +26,14 @@ a fixed release schedule.
 
 ## Execution
 
-- [ ] Launch external programs with arguments.
+- [x] Launch external programs with arguments.
 - [ ] Return useful exit statuses.
 - [x] Implement the `cd` builtin.
 - [x] Implement the `pwd` builtin.
 - [x] Implement the basic `echo` builtin.
 - [x] Implement the `exit` builtin.
-- [ ] Search for executables using `PATH`.
+- [x] Search for executables using `PATH`.
+- [x] Cache executable paths and expose them through a `hash` builtin.
 - [ ] Handle common process and system-call failures.
 
 ## Shell features

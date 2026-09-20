@@ -11,6 +11,7 @@ add_executable(myshell
     src/tokenizer.cpp
     src/prompt.cpp
     src/builtins.cpp
+    src/path_search.cpp
 )
 
 target_include_directories(myshell PRIVATE include)

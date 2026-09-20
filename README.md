@@ -32,14 +32,18 @@ The exact username, hostname, and path depend on the current environment.
 | `pwd` | Prints the current working directory. |
 | `echo [arguments...]` | Prints its arguments separated by spaces. |
 | `exit` | Exits the shell. |
+| `hash [options] [name ...]` | Displays or modifies the external-command path cache. |
+
+The `hash` builtin supports Bash-style `-d`, `-l`, `-p pathname`, `-r`, and
+`-t` options. Its default display includes both the cached path and its hit
+count.
 
 Pressing Enter on an empty line displays another prompt. Pressing `Ctrl+D`
 sends end-of-file and also exits the program cleanly.
 
-External commands are recognized as non-builtins but are not executed yet. For
-example, entering `ls` prints `not a builtin (yet): ls`. Quoting, escaping,
-pipes, redirection, and job control are also not implemented. See the
-[roadmap](docs/ROADMAP.md) for the planned direction.
+External commands are resolved using `PATH`, cached, and executed in a child
+process. Quoting, escaping, pipes, redirection, and job control are not yet
+implemented. See the [roadmap](docs/ROADMAP.md) for the planned direction.
 
 ## Requirements
 
@@ -61,7 +65,7 @@ Alternatively, compile all sources directly:
 
 ```bash
 g++ -std=c++20 -Wall -Wextra -Iinclude \
-    src/main.cpp src/builtins.cpp src/prompt.cpp \
+    src/main.cpp src/builtins.cpp src/path_search.cpp src/prompt.cpp \
     src/reader.cpp src/tokenizer.cpp \
     -o myshell
 ./myshell
@@ -74,12 +78,14 @@ g++ -std=c++20 -Wall -Wextra -Iinclude \
 ├── CMakeLists.txt
 ├── include/myshell/
 │   ├── builtins.hpp
+│   ├── path_search.hpp
 │   ├── prompt.hpp
 │   ├── reader.hpp
 │   └── tokenizer.hpp
 ├── src/
 │   ├── builtins.cpp
 │   ├── main.cpp
+│   ├── path_search.cpp
 │   ├── prompt.cpp
 │   ├── reader.cpp
 │   └── tokenizer.cpp
@@ -87,8 +93,11 @@ g++ -std=c++20 -Wall -Wextra -Iinclude \
     └── ROADMAP.md
 ```
 
-- `src/main.cpp` runs the interactive loop and dispatches builtin commands.
-- `src/builtins.cpp` registers and implements `cd`, `pwd`, `echo`, and `exit`.
+- `src/main.cpp` runs the interactive loop and dispatches commands.
+- `src/builtins.cpp` registers and implements `cd`, `pwd`, `echo`, `exit`, and
+  `hash`.
+- `src/path_search.cpp` resolves external commands and maintains their cached
+  paths and hit counts.
 - `src/prompt.cpp` builds the colored prompt from the user, host, and current
   directory.
 - `src/reader.cpp` displays a supplied prompt and reads a line, using an empty
