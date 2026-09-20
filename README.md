@@ -9,32 +9,42 @@ small builtin-command system.
 
 The executable repeatedly displays a prompt containing the username, hostname,
 and current working directory. The `user@host` portion is green and the path is
-blue in a compatible terminal. Each entered line is tokenized and printed.
-
-The `cd` builtin changes the shell's working directory, which is reflected in
-the next prompt:
+blue in a compatible terminal. Each entered line is tokenized and dispatched
+through the builtin-command registry.
 
 ```text
-$ ./myshell
+$ ./build/myshell
+yosf@computer:/home/yosf/Desktop/my-shell$ pwd
+/home/yosf/Desktop/my-shell
 yosf@computer:/home/yosf/Desktop/my-shell$ cd /tmp
-parsed 2 token(s): [cd] [/tmp]
-yosf@computer:/tmp$
+yosf@computer:/tmp$ pwd
+/tmp
+yosf@computer:/tmp$ exit
 ```
 
 The exact username, hostname, and path depend on the current environment.
 
+### Builtin commands
+
+| Command | Behavior |
+| --- | --- |
+| `cd <directory>` | Changes the current working directory. |
+| `pwd` | Prints the current working directory. |
+| `echo [arguments...]` | Prints its arguments separated by spaces. |
+| `exit` | Exits the shell. |
+
 Pressing Enter on an empty line displays another prompt. Pressing `Ctrl+D`
-sends end-of-file and exits the program cleanly.
+sends end-of-file and also exits the program cleanly.
 
 External commands are recognized as non-builtins but are not executed yet. For
 example, entering `ls` prints `not a builtin (yet): ls`. Quoting, escaping,
-additional builtins, pipes, redirection, and job control are also not
-implemented. See the [roadmap](docs/ROADMAP.md) for the planned direction.
+pipes, redirection, and job control are also not implemented. See the
+[roadmap](docs/ROADMAP.md) for the planned direction.
 
 ## Requirements
 
 - A C++20-compatible compiler (GCC 10+, Clang 10+, or equivalent)
-- CMake 3.16 or newer for the planned CMake workflow
+- CMake 3.16 or newer
 - A Unix-like environment providing `gethostname()`, `getcwd()`, and `chdir()`
 
 ## Build and run
@@ -78,7 +88,7 @@ g++ -std=c++20 -Wall -Wextra -Iinclude \
 ```
 
 - `src/main.cpp` runs the interactive loop and dispatches builtin commands.
-- `src/builtins.cpp` registers builtins and implements `cd`.
+- `src/builtins.cpp` registers and implements `cd`, `pwd`, `echo`, and `exit`.
 - `src/prompt.cpp` builds the colored prompt from the user, host, and current
   directory.
 - `src/reader.cpp` displays a supplied prompt and reads a line, using an empty

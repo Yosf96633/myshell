@@ -50,6 +50,9 @@ There is no automated test suite yet. For now, contributors should:
 - check that `Ctrl+D` exits cleanly;
 - check that `cd <directory>` changes the directory shown by the next prompt;
 - check that `cd` without an argument and an invalid path report errors;
+- check that `pwd` prints the current directory;
+- check that `echo` prints its arguments with spaces and handles no arguments;
+- check that `exit` ends the shell cleanly;
 - check that unknown commands are reported as non-builtins;
 - check repeated whitespace and multiple arguments when changing the tokenizer.
 

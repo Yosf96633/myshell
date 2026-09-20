@@ -6,6 +6,8 @@
 
 using namespace std;
 
+const int EXIT_SIGNAL = -999;
+
 // The type every builtin function must match:
 // takes the argument list (NOT including "cd" itself), returns exit status.
 using BuiltinFunc = function<int(const vector<string>&)>;

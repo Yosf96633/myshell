@@ -13,7 +13,7 @@ a fixed release schedule.
 - [x] Complete the reader component referenced by CMake.
 - [x] Include every implemented component in the CMake target.
 - [x] Add a registry for dispatching builtin commands.
-- [ ] Exit when the user enters the `exit` built-in.
+- [x] Exit when the user enters the `exit` builtin.
 - [ ] Add automated tokenizer and parser tests with CTest.
 
 ## Command parsing
@@ -29,8 +29,9 @@ a fixed release schedule.
 - [ ] Launch external programs with arguments.
 - [ ] Return useful exit statuses.
 - [x] Implement the `cd` builtin.
-- [ ] Implement the `pwd` builtin.
-- [ ] Implement the `exit` builtin.
+- [x] Implement the `pwd` builtin.
+- [x] Implement the basic `echo` builtin.
+- [x] Implement the `exit` builtin.
 - [ ] Search for executables using `PATH`.
 - [ ] Handle common process and system-call failures.
 

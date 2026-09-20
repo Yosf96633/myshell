@@ -28,18 +28,22 @@ int main()
 
         if (is_builtin(command))
         {
-            run_builtin(command, args);
+            int result = run_builtin(command, args);
+            if (result == EXIT_SIGNAL)
+            {
+                break; // main() decides when/how to actually stop — cleanup would go here later
+            }
         }
         else
         {
             cout << "not a builtin (yet): " << command << "\n";
         }
-        cout << "parsed " << tokens.size() << " token(s):";
-        for (const auto &t : tokens)
-        {
-            cout << " [" << t << "]";
+
+        for(const auto& t : tokens){
+            cout<<"[ " << t << " ]";
+            
         }
-        cout << "\n";
+        cout<<"\n";
     }
 
     return 0;
