@@ -2,6 +2,7 @@
 #include "myshell/tokenizer.hpp"
 #include "myshell/prompt.hpp"
 #include "myshell/builtins.hpp"
+#include "myshell/history.hpp"
 #include "myshell/path_search.hpp"
 #include <unistd.h>   // fork, execv
 #include <sys/wait.h> // waitpid
@@ -25,9 +26,12 @@ int main()
             continue; // skip to next loop iteration, re-prompt
         }
 
+        add_history_entry(*line);
+
         vector<string> tokens = tokenize(*line);
         expand_aliases(tokens);
-        if (tokens.empty()) {
+        if (tokens.empty())
+        {
             continue;
         }
         string command = tokens[0];

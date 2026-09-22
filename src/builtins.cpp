@@ -1,4 +1,5 @@
 #include "myshell/builtins.hpp"
+#include "myshell/history.hpp"
 #include "myshell/path_search.hpp"
 #include "myshell/tokenizer.hpp"
 #include <unistd.h>   // chdir
@@ -270,6 +271,18 @@ int builtin_alias(const vector<string>& args) {
     return status;
 }
 
+int builtin_history(const vector<string>& args) {
+    if (!args.empty()) {
+        cerr << "history: usage: history\n";
+        return 2;
+    }
+
+    for (size_t i = 0; i < command_history.size(); ++i) {
+        cout << setw(5) << i + 1 << "  " << command_history[i] << '\n';
+    }
+    return 0;
+}
+
 void print_type_alias(const string& name) {
     cout << name << " is aliased to `" << aliases.at(name) << "'\n";
 }
@@ -420,6 +433,8 @@ const vector<BuiltinHelp>& help_topics() {
          "Remember or display program locations.",
          "Options: -d deletes names, -l prints reusable commands, -p assigns a "
          "pathname, -r clears the table, and -t prints cached paths."},
+        {"history", "history", "Display the command history.",
+         "Display this session's command history with line numbers."},
         {"help", "help [-dms] [pattern ...]", "Display information about builtin commands.",
          "Options: -d prints a short description, -m uses manpage-style output, "
          "and -s prints only the synopsis."},
@@ -598,6 +613,7 @@ std::unordered_map<std::string, BuiltinFunc> builtins = {
     {"echo", builtin_echo},
     {"exit", builtin_exit},
     {"hash", builtin_hash},
+    {"history", builtin_history},
     {"type", builtin_type},
     {"alias", builtin_alias},
     {"help", builtin_help},

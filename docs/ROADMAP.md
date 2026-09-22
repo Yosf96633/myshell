@@ -46,7 +46,7 @@ a fixed release schedule.
 - [ ] Support environment assignment and expansion.
 - [ ] Handle signals correctly in interactive mode.
 - [ ] Add foreground and background job control.
-- [ ] Add command history and line editing.
+- [x] Add command history and basic line editing.
 
 ## Documentation and quality
 
