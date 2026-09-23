@@ -43,7 +43,7 @@ bool valid_function_name(const string& name) {
 
 bool split_function_body(
     const string& body,
-    vector<SimpleCommand>& commands,
+    vector<FunctionCommand>& commands,
     string& error) {
     enum class QuoteMode { none, single, double_quote };
 
@@ -85,18 +85,27 @@ bool split_function_body(
         } else if (character == ';') {
             const string source = trim(body.substr(command_start, i - command_start));
             if (!source.empty()) {
-                commands.push_back({source, tokenize(source)});
+                ParseResult parsed = parse_command(source);
+                if (parsed.has_error()) {
+                    error = parsed.error;
+                    return false;
+                }
+                commands.push_back({source, parsed.command.value_or(ParsedCommand{})});
             }
             command_start = i + 1;
         }
     }
 
     if (escaped) {
-        error = "function definition ends with an escape character";
+        error = "trailing escape character in function body";
         return false;
     }
-    if (quote != QuoteMode::none) {
-        error = "unclosed quote in function body";
+    if (quote == QuoteMode::single) {
+        error = "unclosed single quote in function body";
+        return false;
+    }
+    if (quote == QuoteMode::double_quote) {
+        error = "unclosed double quote in function body";
         return false;
     }
 
@@ -187,6 +196,18 @@ FunctionDefinitionResult register_function_definition(
         }
     }
 
+    if (escaped) {
+        error = "trailing escape character in function definition";
+        return FunctionDefinitionResult::syntax_error;
+    }
+    if (quote == QuoteMode::single) {
+        error = "unclosed single quote in function definition";
+        return FunctionDefinitionResult::syntax_error;
+    }
+    if (quote == QuoteMode::double_quote) {
+        error = "unclosed double quote in function definition";
+        return FunctionDefinitionResult::syntax_error;
+    }
     if (closing_brace == string::npos) {
         error = "expected `}' after function body";
         return FunctionDefinitionResult::syntax_error;

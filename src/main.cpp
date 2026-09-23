@@ -33,7 +33,7 @@ int main()
         const auto definition_result = register_function_definition(*line, definition_error);
         if (definition_result == FunctionDefinitionResult::syntax_error)
         {
-            cerr << "syntax error: " << definition_error << '\n';
+            cerr << "myshell: syntax error: " << definition_error << '\n';
             continue;
         }
         if (definition_result == FunctionDefinitionResult::registered)
@@ -41,13 +41,18 @@ int main()
             continue;
         }
 
-        vector<string> tokens = tokenize(*line);
-        if (tokens.empty())
+        ParseResult parsed = parse_command(*line);
+        if (parsed.has_error())
+        {
+            cerr << "myshell: syntax error: " << parsed.error << '\n';
+            continue;
+        }
+        if (!parsed.command)
         {
             continue;
         }
 
-        const int result = execute_command(move(tokens));
+        const int result = execute_command(move(*parsed.command));
         if (result == EXIT_SIGNAL)
         {
             break; // main() decides when/how to actually stop — cleanup would go here later

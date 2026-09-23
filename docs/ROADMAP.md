@@ -21,8 +21,8 @@ a fixed release schedule.
 - [x] Preserve quoted strings as single arguments.
 - [x] Support escaped characters.
 - [x] Parse basic environment-variable expansion and `$$`.
-- [ ] Represent commands with a dedicated parsed-command type.
-- [ ] Report incomplete quotes and other syntax errors clearly.
+- [x] Represent commands with a dedicated parsed-command type.
+- [x] Report incomplete quotes and other syntax errors clearly.
 
 ## Execution
 

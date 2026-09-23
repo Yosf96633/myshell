@@ -1,17 +1,19 @@
 #pragma once
 
+#include "myshell/parsed_command.hpp"
+
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-struct SimpleCommand {
+struct FunctionCommand {
     std::string source;
-    std::vector<std::string> words;
+    ParsedCommand parsed;
 };
 
 struct ShellFunction {
     std::string name;
-    std::vector<SimpleCommand> commands;
+    std::vector<FunctionCommand> commands;
 };
 
 enum class FunctionDefinitionResult {

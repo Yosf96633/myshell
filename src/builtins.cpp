@@ -10,6 +10,7 @@
 #include <cstdlib>      // getenv
 #include <climits>      // PATH_MAX
 #include <iomanip>
+#include <iterator>
 #include <unordered_set>
 using namespace std;
 
@@ -664,20 +665,42 @@ int builtin_help(const vector<string>& args) {
 
 } // namespace
 
-void expand_aliases(vector<string>& tokens) {
+bool expand_aliases(ParsedCommand& command, string& error) {
     unordered_set<string> expanded_names;
 
-    while (!tokens.empty()) {
-        auto alias = aliases.find(tokens.front());
+    while (!command.empty()) {
+        auto alias = aliases.find(command.name);
         if (alias == aliases.end() || expanded_names.count(alias->first) > 0) {
             break;
         }
 
         expanded_names.insert(alias->first);
-        vector<string> replacement = tokenize(alias->second);
-        replacement.insert(replacement.end(), tokens.begin() + 1, tokens.end());
-        tokens = move(replacement);
+        ParseResult replacement = parse_command(alias->second);
+        if (replacement.has_error()) {
+            error = replacement.error;
+            return false;
+        }
+
+        vector<string> trailing_arguments = move(command.arguments);
+        if (!replacement.command) {
+            if (trailing_arguments.empty()) {
+                command = {};
+                break;
+            }
+            command.name = move(trailing_arguments.front());
+            command.arguments.assign(
+                make_move_iterator(trailing_arguments.begin() + 1),
+                make_move_iterator(trailing_arguments.end()));
+            continue;
+        }
+
+        command = move(*replacement.command);
+        command.arguments.insert(
+            command.arguments.end(),
+            make_move_iterator(trailing_arguments.begin()),
+            make_move_iterator(trailing_arguments.end()));
     }
+    return true;
 }
 
 // The actual cd implementation

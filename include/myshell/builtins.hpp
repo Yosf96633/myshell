@@ -1,4 +1,6 @@
 #pragma once
+#include "myshell/parsed_command.hpp"
+
 #include <string>
 #include <vector>
 #include <functional>
@@ -22,4 +24,5 @@ bool is_builtin(const string& name);
 int run_builtin(const string& name, const vector<string>& args);
 
 // Replace the command word with its alias value, following chained aliases.
-void expand_aliases(vector<string>& tokens);
+// Returns false and sets `error` if an alias contains invalid syntax.
+bool expand_aliases(ParsedCommand& command, string& error);

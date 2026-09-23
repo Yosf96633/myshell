@@ -1,9 +1,18 @@
-#pragma once   // prevents this file from being read twice by accident
+#pragma once
 
+#include "myshell/parsed_command.hpp"
+
+#include <optional>
 #include <string>
-#include <vector>
-using namespace std;
 
-// This line just says: "somewhere, there's a function called tokenize
-// that takes a string and gives back a list of strings."
-vector<string> tokenize(const string& line);
+struct ParseResult {
+    std::optional<ParsedCommand> command;
+    std::string error;
+
+    bool has_error() const {
+        return !error.empty();
+    }
+};
+
+// Parse one simple command. An empty input has no command and no error.
+ParseResult parse_command(const std::string& line);

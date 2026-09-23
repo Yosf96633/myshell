@@ -4,6 +4,8 @@
 
 #include <cctype>
 #include <cstdlib>
+#include <iterator>
+#include <utility>
 
 using namespace std;
 
@@ -19,40 +21,52 @@ bool is_variable_character(char character) {
     return isalnum(byte) || character == '_';
 }
 
-// Expand a parameter beginning at line[position]. Returns true when the dollar
-// sign introduced a supported parameter and advances position past its name.
-bool expand_parameter(const string& line, size_t& position, string& word) {
+enum class ExpansionResult { not_parameter, expanded, error };
+
+// Expand a parameter beginning at line[position] and advance position past it.
+ExpansionResult expand_parameter(
+    const string& line,
+    size_t& position,
+    string& word,
+    string& error) {
     if (position + 1 >= line.size()) {
-        return false;
+        return ExpansionResult::not_parameter;
     }
 
     const char next = line[position + 1];
     if (next == '$') {
         word += to_string(getpid());
         ++position;
-        return true;
+        return ExpansionResult::expanded;
     }
 
     string name;
     if (next == '{') {
         const size_t closing_brace = line.find('}', position + 2);
         if (closing_brace == string::npos) {
-            return false;
+            error = "missing `}' in parameter expansion";
+            return ExpansionResult::error;
         }
 
         name = line.substr(position + 2, closing_brace - position - 2);
-        if (name.empty() || !is_variable_start(name.front())) {
-            return false;
+        if (name.empty()) {
+            error = "empty variable name in parameter expansion";
+            return ExpansionResult::error;
+        }
+        if (!is_variable_start(name.front())) {
+            error = "invalid variable name in parameter expansion: " + name;
+            return ExpansionResult::error;
         }
         for (char character : name) {
             if (!is_variable_character(character)) {
-                return false;
+                error = "invalid variable name in parameter expansion: " + name;
+                return ExpansionResult::error;
             }
         }
         position = closing_brace;
     } else {
         if (!is_variable_start(next)) {
-            return false;
+            return ExpansionResult::not_parameter;
         }
 
         size_t end = position + 2;
@@ -66,12 +80,12 @@ bool expand_parameter(const string& line, size_t& position, string& word) {
     if (const char* value = getenv(name.c_str())) {
         word += value;
     }
-    return true;
+    return ExpansionResult::expanded;
 }
 
 } // namespace
 
-vector<string> tokenize(const string& line) {
+ParseResult parse_command(const string& line) {
     vector<string> tokens;
     string word;
     bool token_started = false;
@@ -94,11 +108,20 @@ vector<string> tokenize(const string& line) {
         if (quote == QuoteMode::double_quote) {
             if (character == '"') {
                 quote = QuoteMode::none;
-            } else if (character == '\\' && i + 1 < line.size()) {
+            } else if (character == '\\') {
+                if (i + 1 >= line.size()) {
+                    return {nullopt, "trailing escape character"};
+                }
                 word += line[++i];
-            } else if (character == '$' && expand_parameter(line, i, word)) {
-                // Opening the quote already marked this token as present, even
-                // when the variable is unset or has an empty value.
+            } else if (character == '$') {
+                string error;
+                const auto expansion = expand_parameter(line, i, word, error);
+                if (expansion == ExpansionResult::error) {
+                    return {nullopt, move(error)};
+                }
+                if (expansion == ExpansionResult::not_parameter) {
+                    word += character;
+                }
             } else {
                 word += character;
             }
@@ -117,12 +140,20 @@ vector<string> tokenize(const string& line) {
         } else if (character == '"') {
             quote = QuoteMode::double_quote;
             token_started = true;
-        } else if (character == '\\' && i + 1 < line.size()) {
+        } else if (character == '\\') {
+            if (i + 1 >= line.size()) {
+                return {nullopt, "trailing escape character"};
+            }
             word += line[++i];
             token_started = true;
         } else if (character == '$') {
             const size_t original_size = word.size();
-            if (expand_parameter(line, i, word)) {
+            string error;
+            const auto expansion = expand_parameter(line, i, word, error);
+            if (expansion == ExpansionResult::error) {
+                return {nullopt, move(error)};
+            }
+            if (expansion == ExpansionResult::expanded) {
                 token_started = token_started || word.size() > original_size;
             } else {
                 word += character;
@@ -134,9 +165,26 @@ vector<string> tokenize(const string& line) {
         }
     }
 
+    if (quote == QuoteMode::single) {
+        return {nullopt, "unclosed single quote"};
+    }
+    if (quote == QuoteMode::double_quote) {
+        return {nullopt, "unclosed double quote"};
+    }
+
     if (token_started) {
         tokens.push_back(word);
     }
 
-    return tokens;
+    if (tokens.empty()) {
+        return {};
+    }
+
+    ParsedCommand command;
+    command.name = move(tokens.front());
+    command.present = true;
+    command.arguments.assign(
+        make_move_iterator(tokens.begin() + 1),
+        make_move_iterator(tokens.end()));
+    return {move(command), {}};
 }

@@ -72,7 +72,7 @@ int run_function(const string& name, int function_depth) {
     const ShellFunction function = shell_functions.at(name);
     int status = 0;
     for (const auto& command : function.commands) {
-        status = execute_command(command.words, function_depth + 1);
+        status = execute_command(command.parsed, function_depth + 1);
         if (status == EXIT_SIGNAL) {
             return status;
         }
@@ -82,20 +82,21 @@ int run_function(const string& name, int function_depth) {
 
 } // namespace
 
-int execute_command(vector<string> tokens, int function_depth) {
-    expand_aliases(tokens);
-    if (tokens.empty()) {
+int execute_command(ParsedCommand command, int function_depth) {
+    string alias_error;
+    if (!expand_aliases(command, alias_error)) {
+        cerr << "myshell: alias: " << alias_error << '\n';
+        return 2;
+    }
+    if (command.empty()) {
         return 0;
     }
 
-    const string command = tokens.front();
-    const vector<string> args(tokens.begin() + 1, tokens.end());
-
-    if (is_shell_function(command)) {
-        return run_function(command, function_depth);
+    if (is_shell_function(command.name)) {
+        return run_function(command.name, function_depth);
     }
-    if (is_builtin(command)) {
-        return run_builtin(command, args);
+    if (is_builtin(command.name)) {
+        return run_builtin(command.name, command.arguments);
     }
-    return run_external_command(command, args);
+    return run_external_command(command.name, command.arguments);
 }
