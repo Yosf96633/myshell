@@ -11,6 +11,7 @@ add_executable(myshell
     src/functions.cpp
     src/history.cpp
     src/reader.cpp
+    src/shell_ui.cpp
     src/tokenizer.cpp
     src/prompt.cpp
     src/builtins.cpp

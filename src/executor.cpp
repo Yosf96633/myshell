@@ -7,6 +7,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <csignal>
 #include <cstdlib>
 #include <iostream>
 #include <vector>
@@ -31,6 +32,10 @@ int run_external_command(const string& command, const vector<string>& args) {
     }
 
     if (pid == 0) {
+        // The interactive shell ignores these signals; external commands must not.
+        signal(SIGINT, SIG_DFL);
+        signal(SIGQUIT, SIG_DFL);
+
         vector<char*> c_args;
         c_args.push_back(const_cast<char*>(resolved->c_str()));
         for (const auto& argument : args) {

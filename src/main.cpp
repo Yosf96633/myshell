@@ -1,4 +1,5 @@
 #include "myshell/reader.hpp"
+#include "myshell/shell_ui.hpp"
 #include "myshell/tokenizer.hpp"
 #include "myshell/prompt.hpp"
 #include "myshell/builtins.hpp"
@@ -10,9 +11,11 @@
 using namespace std;
 int main()
 {
+    ShellUi shell_ui;
     while (true)
     { // repeat forever until we break
 
+        shell_ui.refresh(true);
         auto line = read_line(build_prompt());
         if (!line)
         { // Ctrl+D was pressed
