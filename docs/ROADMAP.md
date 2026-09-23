@@ -47,6 +47,7 @@ a fixed release schedule.
 - [ ] Handle signals correctly in interactive mode.
 - [ ] Add foreground and background job control.
 - [x] Add command history and basic line editing.
+- [x] Define, inspect, invoke, and remove simple single-line shell functions.
 
 ## Documentation and quality
 

@@ -1,4 +1,5 @@
 #include "myshell/builtins.hpp"
+#include "myshell/functions.hpp"
 #include "myshell/history.hpp"
 #include "myshell/path_search.hpp"
 #include "myshell/tokenizer.hpp"
@@ -193,8 +194,8 @@ int builtin_hash(const vector<string>& args) {
     if (!names.empty()) {
         int status = 0;
         for (const auto& name : names) {
-            // Like Bash, a builtin name needs no PATH entry and is skipped.
-            if (is_builtin(name)) {
+            // Builtins and functions need no PATH entry and are skipped.
+            if (is_builtin(name) || is_shell_function(name)) {
                 continue;
             }
             if (!cache_command(name)) {
@@ -283,12 +284,112 @@ int builtin_history(const vector<string>& args) {
     return 0;
 }
 
+int builtin_declare(const vector<string>& args) {
+    bool show_definitions = false;
+    bool show_names = false;
+    size_t argument_index = 0;
+
+    while (argument_index < args.size()) {
+        const string& arg = args[argument_index];
+        if (arg == "--") {
+            ++argument_index;
+            break;
+        }
+        if (arg.size() < 2 || arg[0] != '-' || arg == "-") {
+            break;
+        }
+
+        for (size_t i = 1; i < arg.size(); ++i) {
+            if (arg[i] == 'f') {
+                show_definitions = true;
+            } else if (arg[i] == 'F') {
+                show_names = true;
+            } else {
+                cerr << "declare: -" << arg[i] << ": invalid option\n"
+                     << "declare: usage: declare -f|-F [name ...]\n";
+                return 2;
+            }
+        }
+        ++argument_index;
+    }
+
+    if (!show_definitions && !show_names) {
+        cerr << "declare: this shell currently supports only -f and -F\n"
+             << "declare: usage: declare -f|-F [name ...]\n";
+        return 2;
+    }
+
+    vector<string> names(args.begin() + static_cast<ptrdiff_t>(argument_index), args.end());
+    const bool requested_specific_names = !names.empty();
+    if (names.empty()) {
+        names = sorted_function_names();
+    }
+
+    int status = 0;
+    for (const auto& name : names) {
+        const auto function = shell_functions.find(name);
+        if (function == shell_functions.end()) {
+            status = 1;
+            continue;
+        }
+
+        if (show_names) {
+            if (!requested_specific_names) {
+                cout << "declare -f ";
+            }
+            cout << name << '\n';
+        } else {
+            print_function_definition(function->second);
+        }
+    }
+    return status;
+}
+
+int builtin_unset(const vector<string>& args) {
+    bool remove_functions = false;
+    size_t argument_index = 0;
+
+    while (argument_index < args.size()) {
+        const string& arg = args[argument_index];
+        if (arg == "--") {
+            ++argument_index;
+            break;
+        }
+        if (arg.size() < 2 || arg[0] != '-' || arg == "-") {
+            break;
+        }
+
+        for (size_t i = 1; i < arg.size(); ++i) {
+            if (arg[i] == 'f') {
+                remove_functions = true;
+            } else {
+                cerr << "unset: -" << arg[i] << ": invalid option\n"
+                     << "unset: usage: unset -f [name ...]\n";
+                return 2;
+            }
+        }
+        ++argument_index;
+    }
+
+    if (!remove_functions) {
+        cerr << "unset: this shell currently supports only -f\n"
+             << "unset: usage: unset -f [name ...]\n";
+        return 2;
+    }
+
+    for (; argument_index < args.size(); ++argument_index) {
+        remove_shell_function(args[argument_index]);
+    }
+    return 0;
+}
+
 void print_type_alias(const string& name) {
     cout << name << " is aliased to `" << aliases.at(name) << "'\n";
 }
 
 int builtin_type(const vector<string>& args) {
     bool show_all = false;
+    bool suppress_functions = false;
     bool path_only = false;
     bool force_path = false;
     bool type_word = false;
@@ -312,7 +413,8 @@ int builtin_type(const vector<string>& args) {
                 show_all = true;
                 break;
             case 'f':
-                break; // Shell functions are not implemented yet.
+                suppress_functions = true;
+                break;
             case 'p':
                 path_only = true;
                 break;
@@ -333,6 +435,7 @@ int builtin_type(const vector<string>& args) {
     int status = 0;
     for (const auto& name : names) {
         const bool is_alias = aliases.count(name) > 0;
+        const bool is_function = !suppress_functions && is_shell_function(name);
         const bool is_shell_builtin = is_builtin(name);
         const vector<string> paths = show_all
             ? find_all_command_paths(name)
@@ -355,7 +458,7 @@ int builtin_type(const vector<string>& args) {
             continue;
         }
 
-        if (!is_alias && !is_shell_builtin && !has_file) {
+        if (!is_alias && !is_function && !is_shell_builtin && !has_file) {
             if (!type_word && !path_only) {
                 cerr << "type: " << name << ": not found\n";
             }
@@ -366,10 +469,13 @@ int builtin_type(const vector<string>& args) {
         if (type_word) {
             if (show_all) {
                 if (is_alias) cout << "alias\n";
+                if (is_function) cout << "function\n";
                 if (is_shell_builtin) cout << "builtin\n";
                 for (size_t i = 0; i < paths.size(); ++i) cout << "file\n";
             } else if (is_alias) {
                 cout << "alias\n";
+            } else if (is_function) {
+                cout << "function\n";
             } else if (is_shell_builtin) {
                 cout << "builtin\n";
             } else {
@@ -383,7 +489,7 @@ int builtin_type(const vector<string>& args) {
                 for (const auto& path : paths) {
                     cout << path << '\n';
                 }
-            } else if (!is_alias && !is_shell_builtin && first_path) {
+            } else if (!is_alias && !is_function && !is_shell_builtin && first_path) {
                 cout << *first_path << '\n';
             }
             continue;
@@ -393,6 +499,10 @@ int builtin_type(const vector<string>& args) {
             if (is_alias) {
                 print_type_alias(name);
             }
+            if (is_function) {
+                cout << name << " is a function\n";
+                print_function_definition(shell_functions.at(name));
+            }
             if (is_shell_builtin) {
                 cout << name << " is a shell builtin\n";
             }
@@ -401,6 +511,9 @@ int builtin_type(const vector<string>& args) {
             }
         } else if (is_alias) {
             print_type_alias(name);
+        } else if (is_function) {
+            cout << name << " is a function\n";
+            print_function_definition(shell_functions.at(name));
         } else if (is_shell_builtin) {
             cout << name << " is a shell builtin\n";
         } else {
@@ -425,6 +538,8 @@ const vector<BuiltinHelp>& help_topics() {
          "An assignment defines an alias; a name by itself displays it."},
         {"cd", "cd directory", "Change the current working directory.",
          "Change the shell's working directory to DIRECTORY."},
+        {"declare", "declare -f|-F [name ...]", "Display shell functions.",
+         "Use -f to display definitions or -F to display function names."},
         {"echo", "echo [argument ...]", "Write arguments to standard output.",
          "Display the arguments separated by one space, followed by a newline."},
         {"exit", "exit", "Exit the shell.",
@@ -443,6 +558,8 @@ const vector<BuiltinHelp>& help_topics() {
         {"type", "type [-afptP] name [name ...]", "Display information about command type.",
          "Options: -a shows all matches, -f suppresses function lookup, -p prints "
          "a command path, -P forces PATH lookup, and -t prints the type word."},
+        {"unset", "unset -f [name ...]", "Remove shell functions.",
+         "Remove each named function from the current shell."},
     };
     return topics;
 }
@@ -609,12 +726,14 @@ int builtin_exit(const std::vector<std::string>&) {
 // The map itself, populated with every builtin we support
 std::unordered_map<std::string, BuiltinFunc> builtins = {
     {"cd", builtin_cd},
+    {"declare", builtin_declare},
     {"pwd", builtin_pwd},
     {"echo", builtin_echo},
     {"exit", builtin_exit},
     {"hash", builtin_hash},
     {"history", builtin_history},
     {"type", builtin_type},
+    {"unset", builtin_unset},
     {"alias", builtin_alias},
     {"help", builtin_help},
 };
