@@ -11,11 +11,10 @@
 using namespace std;
 int main()
 {
-    ShellUi shell_ui;
+    show_launch_screen();
     while (true)
     { // repeat forever until we break
 
-        shell_ui.refresh(true);
         auto line = read_line(build_prompt());
         if (!line)
         { // Ctrl+D was pressed

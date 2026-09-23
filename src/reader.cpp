@@ -1,9 +1,6 @@
 #include "myshell/reader.hpp"
 #include "myshell/history.hpp"
-#include "myshell/shell_ui.hpp"
 
-#include <cerrno>
-#include <sys/select.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -84,19 +81,6 @@ optional<string> read_line(const string& prompt) {
     size_t history_index = command_history.size();
 
     while (true) {
-        refresh_shell_header();
-        fd_set input;
-        FD_ZERO(&input);
-        FD_SET(STDIN_FILENO, &input);
-        timeval timeout{1, 0};
-        const int ready = select(STDIN_FILENO + 1, &input, nullptr, nullptr, &timeout);
-        if (ready == 0 || (ready < 0 && errno == EINTR)) {
-            continue;
-        }
-        if (ready < 0) {
-            return nullopt;
-        }
-
         char character;
         if (!read_byte(character)) {
             return nullopt;
