@@ -6,11 +6,13 @@
 #include "myshell/executor.hpp"
 #include "myshell/functions.hpp"
 #include "myshell/history.hpp"
+#include "myshell/shell_state.hpp"
 #include <iostream>
 #include <utility>
 using namespace std;
 int main()
 {
+    int process_status = 0;
     show_launch_screen();
     while (true)
     { // repeat forever until we break
@@ -19,11 +21,15 @@ int main()
         if (!line)
         { // Ctrl+D was pressed
             cout << "\n";
+            process_status = shell_last_status();
             break; // exit the loop, end the program
         }
 
         if (line->empty())
         {             // user just pressed Enter
+            if (last_read_was_interrupted()) {
+                set_shell_last_status(130);
+            }
             continue; // skip to next loop iteration, re-prompt
         }
 
@@ -34,10 +40,12 @@ int main()
         if (definition_result == FunctionDefinitionResult::syntax_error)
         {
             cerr << "myshell: syntax error: " << definition_error << '\n';
+            set_shell_last_status(2);
             continue;
         }
         if (definition_result == FunctionDefinitionResult::registered)
         {
+            set_shell_last_status(0);
             continue;
         }
 
@@ -45,6 +53,7 @@ int main()
         if (parsed.has_error())
         {
             cerr << "myshell: syntax error: " << parsed.error << '\n';
+            set_shell_last_status(2);
             continue;
         }
         if (!parsed.pipeline)
@@ -63,9 +72,11 @@ int main()
         const int result = execute_pipeline(move(*parsed.pipeline));
         if (result == EXIT_SIGNAL)
         {
+            process_status = shell_requested_exit_status();
             break; // main() decides when/how to actually stop — cleanup would go here later
         }
+        set_shell_last_status(result);
     }
 
-    return 0;
+    return process_status;
 }

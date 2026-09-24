@@ -17,12 +17,19 @@ using namespace std;
 int run_exec_builtin(const ParsedCommand& command) {
     string executable;
     if (!command.arguments.empty()) {
-        const auto resolved = resolve_command(command.arguments.front());
-        if (!resolved) {
-            cerr << "exec: " << command.arguments.front() << ": not found\n";
-            return 127;
+        const CommandResolution resolution =
+            resolve_command_for_execution(command.arguments.front());
+        if (!resolution.path) {
+            if (resolution.error_number == ENOENT
+                || resolution.error_number == ENOTDIR) {
+                cerr << "exec: " << command.arguments.front() << ": not found\n";
+                return 127;
+            }
+            cerr << "exec: " << command.arguments.front() << ": "
+                 << strerror(resolution.error_number) << '\n';
+            return 126;
         }
-        executable = *resolved;
+        executable = *resolution.path;
     }
 
     // Do not let text buffered before `exec` leak into a newly redirected stream.

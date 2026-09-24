@@ -3,13 +3,16 @@
 #include "myshell/functions.hpp"
 #include "myshell/history.hpp"
 #include "myshell/path_search.hpp"
+#include "myshell/shell_state.hpp"
 #include "myshell/tokenizer.hpp"
 #include <unistd.h>   // chdir
 #include <fnmatch.h>  // fnmatch
 #include <algorithm>
+#include <charconv>
+#include <cerrno>
+#include <cstring>
 #include <iostream>
 #include <cstdlib>      // getenv
-#include <climits>      // PATH_MAX
 #include <iomanip>
 #include <iterator>
 #include <unordered_set>
@@ -552,8 +555,9 @@ const vector<BuiltinHelp>& help_topics() {
          "Use -f to display definitions or -F to display function names."},
         {"echo", "echo [argument ...]", "Write arguments to standard output.",
          "Display the arguments separated by one space, followed by a newline."},
-        {"exit", "exit", "Exit the shell.",
-         "Stop the interactive shell."},
+        {"exit", "exit [status]", "Exit the shell.",
+         "Stop the shell using STATUS, or the most recent command status when "
+         "STATUS is omitted."},
         {"exec", "exec [command [argument ...]] [redirection ...]",
          "Replace the shell or modify its file descriptors.",
          "Without a command, apply redirections to the running shell. With a "
@@ -727,12 +731,17 @@ bool expand_aliases(ParsedCommand& command, string& error) {
 // The actual cd implementation
 int builtin_cd(const std::vector<std::string>& args) {
     if (args.empty()) {
-        std::cerr << "cd: missing argument\n";
+        cerr << "cd: missing argument\n";
+        return 1;
+    }
+    if (args.size() > 1) {
+        cerr << "cd: too many arguments\n";
         return 1;
     }
 
     if (chdir(args[0].c_str()) != 0) {
-        std::cerr << "cd: no such directory: " << args[0] << "\n";
+        const int change_error = errno;
+        cerr << "cd: " << args[0] << ": " << strerror(change_error) << '\n';
         return 1;
     }
 
@@ -741,12 +750,14 @@ int builtin_cd(const std::vector<std::string>& args) {
 
 // The actual pwd implementation
 int builtin_pwd(const std::vector<std::string>&) {
-    char cwd[PATH_MAX];
-    if (getcwd(cwd, sizeof(cwd)) == nullptr) {
-        cerr << "pwd: error getting current directory\n";
+    char* cwd = getcwd(nullptr, 0);
+    if (cwd == nullptr) {
+        const int cwd_error = errno;
+        cerr << "pwd: " << strerror(cwd_error) << '\n';
         return 1;
     }
-    cout << cwd << endl;
+    cout << cwd << '\n';
+    free(cwd);
     return 0;
 }
 
@@ -763,7 +774,32 @@ int builtin_echo(const std::vector<std::string>& args) {
 }
 
 // The actual exit implementation
-int builtin_exit(const std::vector<std::string>&) {
+int builtin_exit(const std::vector<std::string>& args) {
+    if (args.size() > 1) {
+        cerr << "exit: too many arguments\n";
+        return 1;
+    }
+
+    if (args.empty()) {
+        set_shell_requested_exit_status(shell_last_status());
+        return EXIT_SIGNAL;
+    }
+
+    const string& value = args.front();
+    const char* first = value.data();
+    const char* last = first + value.size();
+    if (first != last && *first == '+') {
+        ++first;
+    }
+    long long status = 0;
+    const auto parsed = from_chars(first, last, status);
+    if (first == last || parsed.ec != errc{} || parsed.ptr != last) {
+        cerr << "exit: " << value << ": numeric argument required\n";
+        set_shell_requested_exit_status(2);
+        return EXIT_SIGNAL;
+    }
+
+    set_shell_requested_exit_status(static_cast<int>(status % 256));
     return EXIT_SIGNAL;
 }
 

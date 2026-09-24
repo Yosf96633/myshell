@@ -5,8 +5,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstring>
 #include <ctime>
 #include <iostream>
 #include <string>
@@ -139,8 +141,16 @@ void show_launch_screen() {
     struct sigaction ignore_signal{};
     ignore_signal.sa_handler = SIG_IGN;
     sigemptyset(&ignore_signal.sa_mask);
-    sigaction(SIGINT, &ignore_signal, nullptr);
-    sigaction(SIGQUIT, &ignore_signal, nullptr);
+    struct sigaction previous_interrupt {};
+    if (sigaction(SIGINT, &ignore_signal, &previous_interrupt) != 0) {
+        cerr << "myshell: cannot configure SIGINT handling: "
+             << strerror(errno) << '\n';
+    } else if (sigaction(SIGQUIT, &ignore_signal, nullptr) != 0) {
+        const int signal_error = errno;
+        sigaction(SIGINT, &previous_interrupt, nullptr);
+        cerr << "myshell: cannot configure SIGQUIT handling: "
+             << strerror(signal_error) << '\n';
+    }
 
     // Use the regular screen so the banner scrolls like command output.
     cout << "\x1b[r\x1b[2J\x1b[H" << flush;

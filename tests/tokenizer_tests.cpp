@@ -1,4 +1,5 @@
 #include "myshell/tokenizer.hpp"
+#include "myshell/shell_state.hpp"
 
 #include <unistd.h>
 
@@ -106,6 +107,13 @@ void test_parameter_expansion() {
     if (process_id) {
         expect(process_id->arguments == vector<string>({to_string(getpid())}),
                "$$ should expand to the parser process ID");
+    }
+
+    set_shell_last_status(37);
+    auto exit_status = command_from("echo $?", "exit status expansion");
+    if (exit_status) {
+        expect(exit_status->arguments == vector<string>({"37"}),
+               "$? should expand to the latest shell status");
     }
 
     unsetenv("MYSHELL_TEST_MISSING");

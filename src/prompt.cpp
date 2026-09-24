@@ -1,29 +1,32 @@
 #include "myshell/prompt.hpp"
-#include <unistd.h>     // getcwd, gethostname
-#include <cstdlib>      // getenv
-#include <climits>      // PATH_MAX
 
-std::string build_prompt() {
-    // 1. Get username from environment variable
+#include <unistd.h>
+
+#include <cstdlib>
+#include <string>
+
+using namespace std;
+
+string build_prompt() {
     const char* user = getenv("USER");
-    std::string username = user ? user : "user";
+    const string username = user ? user : "user";
 
-    // 2. Get hostname
-    char hostname[256];
-    gethostname(hostname, sizeof(hostname));
+    char hostname_buffer[256]{};
+    string hostname = "unknown-host";
+    if (gethostname(hostname_buffer, sizeof(hostname_buffer)) == 0) {
+        hostname_buffer[sizeof(hostname_buffer) - 1] = '\0';
+        hostname = hostname_buffer;
+    }
 
-    // 3. Get current working directory
-    char cwd[PATH_MAX];
-    getcwd(cwd, sizeof(cwd));
+    string cwd = "?";
+    if (char* current_directory = getcwd(nullptr, 0)) {
+        cwd = current_directory;
+        free(current_directory);
+    }
 
-    // ANSI color codes
-    const std::string GREEN = "\033[32m";
-    const std::string BLUE  = "\033[34m";
-    const std::string RESET = "\033[0m";
-
-    // Build: yosf@mint:~$  (green user@host, blue path)
-    std::string prompt = GREEN + username + "@" + hostname + RESET
-                        + ":" + BLUE + cwd + RESET + "$ ";
-
-    return prompt;
+    const string green = "\033[32m";
+    const string blue = "\033[34m";
+    const string reset = "\033[0m";
+    return green + username + "@" + hostname + reset
+        + ":" + blue + cwd + reset + "$ ";
 }

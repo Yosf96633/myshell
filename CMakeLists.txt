@@ -15,6 +15,7 @@ add_executable(myshell
     src/history.cpp
     src/reader.cpp
     src/shell_ui.cpp
+    src/shell_state.cpp
     src/tokenizer.cpp
     src/prompt.cpp
     src/redirection.cpp
@@ -28,9 +29,17 @@ target_compile_options(myshell PRIVATE -Wall -Wextra)
 if(BUILD_TESTING)
     add_executable(tokenizer_tests
         tests/tokenizer_tests.cpp
+        src/shell_state.cpp
         src/tokenizer.cpp
     )
     target_include_directories(tokenizer_tests PRIVATE include)
     target_compile_options(tokenizer_tests PRIVATE -Wall -Wextra)
     add_test(NAME tokenizer_parser COMMAND tokenizer_tests)
+
+    add_executable(shell_status_tests tests/shell_status_tests.cpp)
+    target_compile_options(shell_status_tests PRIVATE -Wall -Wextra)
+    add_test(
+        NAME shell_exit_status
+        COMMAND shell_status_tests $<TARGET_FILE:myshell>
+    )
 endif()

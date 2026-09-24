@@ -1,4 +1,5 @@
 #include "myshell/path_search.hpp"
+#include <cerrno>
 #include <cstdlib>     // getenv
 #include <sys/stat.h>  // stat, S_ISREG
 #include <unistd.h>    // access
@@ -54,6 +55,55 @@ optional<string> search_path(const string& command) {
     return nullopt;
 }
 
+CommandResolution search_path_for_execution(const string& command) {
+    if (command.find('/') != string::npos) {
+        struct stat file_info {};
+        if (stat(command.c_str(), &file_info) != 0) {
+            return {nullopt, errno};
+        }
+        if (!S_ISREG(file_info.st_mode)) {
+            return {nullopt, EACCES};
+        }
+        if (access(command.c_str(), X_OK) != 0) {
+            return {nullopt, errno};
+        }
+        return {command, 0};
+    }
+
+    const char* path_env = getenv("PATH");
+    if (path_env == nullptr) {
+        return {nullopt, ENOENT};
+    }
+
+    int remembered_error = ENOENT;
+    const string path_list(path_env);
+    size_t component_start = 0;
+    while (true) {
+        const size_t component_end = path_list.find(':', component_start);
+        string dir = path_list.substr(component_start, component_end - component_start);
+        if (dir.empty()) {
+            dir = ".";
+        }
+
+        const string candidate = dir + "/" + command;
+        struct stat file_info {};
+        if (stat(candidate.c_str(), &file_info) == 0) {
+            if (S_ISREG(file_info.st_mode) && access(candidate.c_str(), X_OK) == 0) {
+                return {candidate, 0};
+            }
+            remembered_error = EACCES;
+        } else if (errno != ENOENT && errno != ENOTDIR) {
+            remembered_error = errno;
+        }
+
+        if (component_end == string::npos) {
+            break;
+        }
+        component_start = component_end + 1;
+    }
+    return {nullopt, remembered_error};
+}
+
 } // namespace
 
 optional<string> resolve_command(const string& command) {
@@ -70,6 +120,20 @@ optional<string> resolve_command(const string& command) {
         path_cache[command] = {*resolved, 1};
     }
     return resolved;
+}
+
+CommandResolution resolve_command_for_execution(const string& command) {
+    auto cached = path_cache.find(command);
+    if (cached != path_cache.end()) {
+        ++cached->second.hit_count;
+        return {cached->second.path, 0};
+    }
+
+    CommandResolution resolution = search_path_for_execution(command);
+    if (resolution.path && command.find('/') == string::npos) {
+        path_cache[command] = {*resolution.path, 1};
+    }
+    return resolution;
 }
 
 optional<string> cache_command(const string& command) {

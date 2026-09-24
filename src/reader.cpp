@@ -4,16 +4,22 @@
 #include <termios.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstring>
 #include <iostream>
 
 using namespace std;
 
 namespace {
 
+bool read_was_interrupted = false;
+
 class RawTerminal {
 public:
     RawTerminal() {
         if (tcgetattr(STDIN_FILENO, &original_) != 0) {
+            cerr << "myshell: cannot read terminal settings: "
+                 << strerror(errno) << '\n';
             return;
         }
 
@@ -22,11 +28,16 @@ public:
         raw.c_cc[VMIN] = 1;
         raw.c_cc[VTIME] = 0;
         enabled_ = tcsetattr(STDIN_FILENO, TCSANOW, &raw) == 0;
+        if (!enabled_) {
+            cerr << "myshell: cannot enable raw terminal mode: "
+                 << strerror(errno) << '\n';
+        }
     }
 
     ~RawTerminal() {
-        if (enabled_) {
-            tcsetattr(STDIN_FILENO, TCSANOW, &original_);
+        if (enabled_ && tcsetattr(STDIN_FILENO, TCSANOW, &original_) != 0) {
+            cerr << "myshell: cannot restore terminal settings: "
+                 << strerror(errno) << '\n';
         }
     }
 
@@ -40,7 +51,19 @@ private:
 };
 
 bool read_byte(char& character) {
-    return read(STDIN_FILENO, &character, 1) == 1;
+    while (true) {
+        const ssize_t bytes_read = read(STDIN_FILENO, &character, 1);
+        if (bytes_read == 1) {
+            return true;
+        }
+        if (bytes_read == 0) {
+            return false;
+        }
+        if (errno != EINTR) {
+            cerr << "myshell: read: " << strerror(errno) << '\n';
+            return false;
+        }
+    }
 }
 
 void redraw_line(const string& prompt, const string& line, size_t cursor) {
@@ -56,11 +79,15 @@ void redraw_line(const string& prompt, const string& line, size_t cursor) {
 } // namespace
 
 optional<string> read_line(const string& prompt) {
+    read_was_interrupted = false;
     cout << prompt << flush;   // print prompt, force it to show now
 
     if (!isatty(STDIN_FILENO)) {
         string line;
         if (!getline(cin, line)) {
+            if (cin.bad()) {
+                cerr << "myshell: failed to read input\n";
+            }
             return nullopt;
         }
         return line;
@@ -70,6 +97,9 @@ optional<string> read_line(const string& prompt) {
     if (!terminal.enabled()) {
         string line;
         if (!getline(cin, line)) {
+            if (cin.bad()) {
+                cerr << "myshell: failed to read input\n";
+            }
             return nullopt;
         }
         return line;
@@ -104,6 +134,7 @@ optional<string> read_line(const string& prompt) {
 
         if (character == 3) { // Ctrl+C
             cout << "^C\n";
+            read_was_interrupted = true;
             return string{};
         }
 
@@ -165,4 +196,8 @@ optional<string> read_line(const string& prompt) {
             redraw_line(prompt, line, cursor);
         }
     }
+}
+
+bool last_read_was_interrupted() {
+    return read_was_interrupted;
 }

@@ -27,7 +27,7 @@ a fixed release schedule.
 ## Execution
 
 - [x] Launch external programs with arguments.
-- [ ] Return useful exit statuses.
+- [x] Return useful exit statuses.
 - [x] Implement the `cd` builtin.
 - [x] Implement the `pwd` builtin.
 - [x] Implement the basic `echo` builtin.
@@ -38,7 +38,7 @@ a fixed release schedule.
 - [x] Report command resolution with a `type` builtin.
 - [x] Define, display, and expand command aliases.
 - [x] Display builtin documentation with a `help` builtin.
-- [ ] Handle common process and system-call failures.
+- [x] Handle common process and system-call failures.
 
 ## Shell features
 

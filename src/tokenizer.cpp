@@ -1,4 +1,5 @@
 #include "myshell/tokenizer.hpp"
+#include "myshell/shell_state.hpp"
 
 #include <unistd.h>
 
@@ -52,6 +53,11 @@ ExpansionResult expand_parameter(
     const char next = line[position + 1];
     if (next == '$') {
         word += to_string(getpid());
+        ++position;
+        return ExpansionResult::expanded;
+    }
+    if (next == '?') {
+        word += to_string(shell_last_status());
         ++position;
         return ExpansionResult::expanded;
     }

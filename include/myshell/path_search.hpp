@@ -12,12 +12,22 @@ struct CommandCacheEntry {
     size_t hit_count = 0;
 };
 
+struct CommandResolution {
+    optional<string> path;
+    int error_number = 0;
+};
+
 // The cache: command name -> its resolved path and lookup count.
 extern unordered_map<string, CommandCacheEntry> path_cache;
 
 // Returns the full path to `command` if found (checking cache first, then $PATH),
 // or an empty box if it doesn't exist anywhere in $PATH.
 optional<string> resolve_command(const string& command);
+
+// Resolve a command for execution while preserving why lookup failed. A
+// missing command reports ENOENT; an existing non-executable candidate reports
+// an error such as EACCES so the executor can return 127 versus 126 correctly.
+CommandResolution resolve_command_for_execution(const string& command);
 
 // Search PATH and remember `command` with a fresh hit count of zero.
 // This is used by the `hash name ...` builtin.

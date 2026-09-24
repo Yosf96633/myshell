@@ -5,6 +5,8 @@
 #include "myshell/functions.hpp"
 #include "myshell/path_search.hpp"
 #include "myshell/redirection.hpp"
+#include "myshell/shell_state.hpp"
+#include "myshell/tokenizer.hpp"
 
 #include <sys/wait.h>
 #include <unistd.h>
@@ -25,9 +27,19 @@ namespace {
 
 constexpr int maximum_function_depth = 64;
 
-void reset_child_signals() {
-    signal(SIGINT, SIG_DFL);
-    signal(SIGQUIT, SIG_DFL);
+int record_status(int status) {
+    if (status != EXIT_SIGNAL) {
+        set_shell_last_status(status);
+    }
+    return status;
+}
+
+bool reset_child_signals() {
+    struct sigaction default_action {};
+    default_action.sa_handler = SIG_DFL;
+    sigemptyset(&default_action.sa_mask);
+    return sigaction(SIGINT, &default_action, nullptr) == 0
+        && sigaction(SIGQUIT, &default_action, nullptr) == 0;
 }
 
 int wait_status_to_exit_status(int status) {
@@ -44,6 +56,7 @@ int wait_for_process(pid_t pid) {
     int status = 0;
     while (waitpid(pid, &status, 0) < 0) {
         if (errno != EINTR) {
+            cerr << "myshell: waitpid: " << strerror(errno) << '\n';
             return 1;
         }
     }
@@ -52,27 +65,32 @@ int wait_for_process(pid_t pid) {
 
 [[noreturn]] void exec_external_command(
     const ParsedCommand& command,
-    const optional<string>& resolved) {
-    if (!resolved) {
-        cerr << command.name << ": command not found\n" << flush;
-        _exit(127);
+    const CommandResolution& resolution) {
+    if (!resolution.path) {
+        if (resolution.error_number == ENOENT || resolution.error_number == ENOTDIR) {
+            cerr << command.name << ": command not found\n" << flush;
+            _exit(127);
+        }
+        cerr << command.name << ": " << strerror(resolution.error_number)
+             << '\n' << flush;
+        _exit(126);
     }
 
     vector<char*> arguments;
-    arguments.push_back(const_cast<char*>(resolved->c_str()));
+    arguments.push_back(const_cast<char*>(resolution.path->c_str()));
     for (const auto& argument : command.arguments) {
         arguments.push_back(const_cast<char*>(argument.c_str()));
     }
     arguments.push_back(nullptr);
 
-    execv(resolved->c_str(), arguments.data());
+    execv(resolution.path->c_str(), arguments.data());
     const int exec_error = errno;
     cerr << command.name << ": " << strerror(exec_error) << '\n' << flush;
     _exit(exec_error == ENOENT ? 127 : 126);
 }
 
 int run_external_command(const ParsedCommand& command) {
-    const optional<string> resolved = resolve_command(command.name);
+    const CommandResolution resolution = resolve_command_for_execution(command.name);
     cout.flush();
     cerr.flush();
 
@@ -82,13 +100,17 @@ int run_external_command(const ParsedCommand& command) {
         return 1;
     }
     if (pid == 0) {
-        reset_child_signals();
+        if (!reset_child_signals()) {
+            cerr << "myshell: cannot reset child signals: "
+                 << strerror(errno) << '\n' << flush;
+            _exit(1);
+        }
         string error;
         if (!apply_redirections(command.redirections, error)) {
             cerr << command.name << ": " << error << '\n' << flush;
             _exit(1);
         }
-        exec_external_command(command, resolved);
+        exec_external_command(command, resolution);
     }
     return wait_for_process(pid);
 }
@@ -103,7 +125,13 @@ int run_function(const string& name, int function_depth) {
     const ShellFunction function = shell_functions.at(name);
     int status = 0;
     for (const auto& command : function.commands) {
-        status = execute_pipeline(command.parsed, function_depth + 1);
+        PipelineParseResult parsed = parse_pipeline(command.source);
+        if (parsed.has_error() || !parsed.pipeline) {
+            cerr << name << ": cannot parse stored function command: "
+                 << parsed.error << '\n';
+            return record_status(2);
+        }
+        status = execute_pipeline(move(*parsed.pipeline), function_depth + 1);
         if (status == EXIT_SIGNAL) {
             return status;
         }
@@ -163,7 +191,11 @@ void close_pipes(const vector<array<int, 2>>& pipes) {
     int function_depth,
     size_t index,
     const vector<array<int, 2>>& pipes) {
-    reset_child_signals();
+    if (!reset_child_signals()) {
+        cerr << "myshell: cannot reset child signals: "
+             << strerror(errno) << '\n' << flush;
+        _exit(1);
+    }
 
     if (index > 0 && dup2(pipes[index - 1][0], STDIN_FILENO) < 0) {
         cerr << "myshell: pipe input: " << strerror(errno) << '\n' << flush;
@@ -187,9 +219,9 @@ void close_pipes(const vector<array<int, 2>>& pipes) {
     if (status >= 0) {
         cout.flush();
         cerr.flush();
-        _exit(status == EXIT_SIGNAL ? 0 : status);
+        _exit(status == EXIT_SIGNAL ? shell_requested_exit_status() : status);
     }
-    exec_external_command(command, resolve_command(command.name));
+    exec_external_command(command, resolve_command_for_execution(command.name));
 }
 
 } // namespace
@@ -198,26 +230,27 @@ int execute_command(ParsedCommand command, int function_depth) {
     string alias_error;
     if (!expand_aliases(command, alias_error)) {
         cerr << "myshell: alias: " << alias_error << '\n';
-        return 2;
+        return record_status(2);
     }
     if (command.empty()) {
-        return 0;
+        return record_status(0);
     }
 
     if (command.name == "exec") {
-        return run_exec_builtin(command);
+        return record_status(run_exec_builtin(command));
     }
     if (command.name.empty()
         || is_shell_function(command.name)
         || is_builtin(command.name)) {
-        return run_parent_command_with_redirections(move(command), function_depth);
+        return record_status(
+            run_parent_command_with_redirections(move(command), function_depth));
     }
-    return run_external_command(command);
+    return record_status(run_external_command(command));
 }
 
 int execute_pipeline(ParsedPipeline pipeline, int function_depth) {
     if (pipeline.empty()) {
-        return 0;
+        return record_status(0);
     }
     if (pipeline.commands.size() == 1) {
         return execute_command(move(pipeline.commands.front()), function_depth);
@@ -227,7 +260,7 @@ int execute_pipeline(ParsedPipeline pipeline, int function_depth) {
         string alias_error;
         if (!expand_aliases(command, alias_error)) {
             cerr << "myshell: alias: " << alias_error << '\n';
-            return 2;
+            return record_status(2);
         }
     }
 
@@ -241,7 +274,7 @@ int execute_pipeline(ParsedPipeline pipeline, int function_depth) {
                 close(pipes[i][1]);
             }
             cerr << "myshell: pipe: " << strerror(pipe_error) << '\n';
-            return 1;
+            return record_status(1);
         }
     }
 
@@ -258,7 +291,7 @@ int execute_pipeline(ParsedPipeline pipeline, int function_depth) {
                 wait_for_process(child);
             }
             cerr << "myshell: fork: " << strerror(fork_error) << '\n';
-            return 1;
+            return record_status(1);
         }
         if (pid == 0) {
             run_pipeline_stage(
@@ -275,5 +308,5 @@ int execute_pipeline(ParsedPipeline pipeline, int function_depth) {
             final_status = status;
         }
     }
-    return final_status;
+    return record_status(final_status);
 }
