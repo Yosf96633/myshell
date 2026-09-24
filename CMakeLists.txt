@@ -7,6 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)  # for clangd/IDE tooling
 
 add_executable(myshell
     src/main.cpp
+    src/exec_builtin.cpp
     src/executor.cpp
     src/functions.cpp
     src/history.cpp
@@ -14,6 +15,7 @@ add_executable(myshell
     src/shell_ui.cpp
     src/tokenizer.cpp
     src/prompt.cpp
+    src/redirection.cpp
     src/builtins.cpp
     src/path_search.cpp
 )

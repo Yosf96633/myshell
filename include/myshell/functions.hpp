@@ -8,7 +8,7 @@
 
 struct FunctionCommand {
     std::string source;
-    ParsedCommand parsed;
+    ParsedPipeline parsed;
 };
 
 struct ShellFunction {

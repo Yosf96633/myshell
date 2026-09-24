@@ -1,4 +1,5 @@
 #include "myshell/builtins.hpp"
+#include "myshell/exec_builtin.hpp"
 #include "myshell/functions.hpp"
 #include "myshell/history.hpp"
 #include "myshell/path_search.hpp"
@@ -285,6 +286,14 @@ int builtin_history(const vector<string>& args) {
     return 0;
 }
 
+int builtin_exec(const vector<string>& args) {
+    ParsedCommand command;
+    command.name = "exec";
+    command.arguments = args;
+    command.present = true;
+    return run_exec_builtin(command);
+}
+
 int builtin_declare(const vector<string>& args) {
     bool show_definitions = false;
     bool show_names = false;
@@ -545,6 +554,10 @@ const vector<BuiltinHelp>& help_topics() {
          "Display the arguments separated by one space, followed by a newline."},
         {"exit", "exit", "Exit the shell.",
          "Stop the interactive shell."},
+        {"exec", "exec [command [argument ...]] [redirection ...]",
+         "Replace the shell or modify its file descriptors.",
+         "Without a command, apply redirections to the running shell. With a "
+         "command, replace the shell process with that executable."},
         {"hash", "hash [-lr] [-p pathname] [-dt] [name ...]",
          "Remember or display program locations.",
          "Options: -d deletes names, -l prints reusable commands, -p assigns a "
@@ -682,15 +695,19 @@ bool expand_aliases(ParsedCommand& command, string& error) {
         }
 
         vector<string> trailing_arguments = move(command.arguments);
+        vector<Redirection> trailing_redirections = move(command.redirections);
         if (!replacement.command) {
             if (trailing_arguments.empty()) {
                 command = {};
+                command.redirections = move(trailing_redirections);
+                command.present = !command.redirections.empty();
                 break;
             }
             command.name = move(trailing_arguments.front());
             command.arguments.assign(
                 make_move_iterator(trailing_arguments.begin() + 1),
                 make_move_iterator(trailing_arguments.end()));
+            command.redirections = move(trailing_redirections);
             continue;
         }
 
@@ -699,6 +716,10 @@ bool expand_aliases(ParsedCommand& command, string& error) {
             command.arguments.end(),
             make_move_iterator(trailing_arguments.begin()),
             make_move_iterator(trailing_arguments.end()));
+        command.redirections.insert(
+            command.redirections.end(),
+            make_move_iterator(trailing_redirections.begin()),
+            make_move_iterator(trailing_redirections.end()));
     }
     return true;
 }
@@ -753,6 +774,7 @@ std::unordered_map<std::string, BuiltinFunc> builtins = {
     {"pwd", builtin_pwd},
     {"echo", builtin_echo},
     {"exit", builtin_exit},
+    {"exec", builtin_exec},
     {"hash", builtin_hash},
     {"history", builtin_history},
     {"type", builtin_type},

@@ -32,6 +32,7 @@ a fixed release schedule.
 - [x] Implement the `pwd` builtin.
 - [x] Implement the basic `echo` builtin.
 - [x] Implement the `exit` builtin.
+- [x] Implement the `exec` builtin and persistent descriptor redirections.
 - [x] Search for executables using `PATH`.
 - [x] Cache executable paths and expose them through a `hash` builtin.
 - [x] Report command resolution with a `type` builtin.
@@ -41,8 +42,8 @@ a fixed release schedule.
 
 ## Shell features
 
-- [ ] Add input and output redirection.
-- [ ] Connect commands with pipelines.
+- [x] Add input and output redirection.
+- [x] Connect commands with pipelines.
 - [ ] Support environment assignment and expansion.
 - [ ] Handle signals correctly in interactive mode.
 - [ ] Add foreground and background job control.

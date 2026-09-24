@@ -85,12 +85,12 @@ bool split_function_body(
         } else if (character == ';') {
             const string source = trim(body.substr(command_start, i - command_start));
             if (!source.empty()) {
-                ParseResult parsed = parse_command(source);
+                PipelineParseResult parsed = parse_pipeline(source);
                 if (parsed.has_error()) {
                     error = parsed.error;
                     return false;
                 }
-                commands.push_back({source, parsed.command.value_or(ParsedCommand{})});
+                commands.push_back({source, parsed.pipeline.value_or(ParsedPipeline{})});
             }
             command_start = i + 1;
         }

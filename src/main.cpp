@@ -41,18 +41,26 @@ int main()
             continue;
         }
 
-        ParseResult parsed = parse_command(*line);
+        PipelineParseResult parsed = parse_pipeline(*line);
         if (parsed.has_error())
         {
             cerr << "myshell: syntax error: " << parsed.error << '\n';
             continue;
         }
-        if (!parsed.command)
+        if (!parsed.pipeline)
         {
             continue;
         }
-
-        const int result = execute_command(move(*parsed.command));
+        for (const auto& command : parsed.pipeline->commands) {
+            cout<<"Parsed command name : "<<command.name<<endl;
+            cout<<"Parsed command present : "<<command.present<<endl;
+            cout<<"Parsed error : "<<parsed.error<<endl;
+            for (auto const& args:command.arguments){
+                cout<<"Args : "<<args<<endl;
+            }
+            cout<<endl;
+        }
+        const int result = execute_pipeline(move(*parsed.pipeline));
         if (result == EXIT_SIGNAL)
         {
             break; // main() decides when/how to actually stop — cleanup would go here later
