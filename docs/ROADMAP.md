@@ -14,7 +14,7 @@ a fixed release schedule.
 - [x] Include every implemented component in the CMake target.
 - [x] Add a registry for dispatching builtin commands.
 - [x] Exit when the user enters the `exit` builtin.
-- [ ] Add automated tokenizer and parser tests with CTest.
+- [x] Add automated tokenizer and parser tests with CTest.
 
 ## Command parsing
 
