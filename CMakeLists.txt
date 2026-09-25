@@ -42,4 +42,15 @@ if(BUILD_TESTING)
         NAME shell_exit_status
         COMMAND shell_status_tests $<TARGET_FILE:myshell>
     )
+
+    add_executable(interactive_signal_tests tests/interactive_signal_tests.cpp)
+    target_compile_options(interactive_signal_tests PRIVATE -Wall -Wextra)
+    find_library(UTIL_LIBRARY NAMES util)
+    if(UTIL_LIBRARY)
+        target_link_libraries(interactive_signal_tests PRIVATE ${UTIL_LIBRARY})
+    endif()
+    add_test(
+        NAME interactive_signals
+        COMMAND interactive_signal_tests $<TARGET_FILE:myshell>
+    )
 endif()

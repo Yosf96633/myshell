@@ -13,6 +13,7 @@ using namespace std;
 int main()
 {
     int process_status = 0;
+    configure_interactive_signal_handling();
     show_launch_screen();
     while (true)
     { // repeat forever until we break

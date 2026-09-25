@@ -51,8 +51,9 @@ sends end-of-file and also exits the program cleanly.
 External commands are resolved using `PATH`, cached, and executed in a child
 process. Basic single quotes, double quotes, backslash escaping, pipelines,
 redirections, environment assignments, and variable expansion are supported.
-Job control is not yet implemented. See the [roadmap](docs/ROADMAP.md) for the
-planned direction.
+In interactive mode, `Ctrl+C` and `Ctrl+\` affect the foreground command
+without terminating the shell. Job control is not yet implemented. See the
+[roadmap](docs/ROADMAP.md) for the planned direction.
 
 ## Requirements
 

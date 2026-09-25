@@ -100,7 +100,7 @@ int wait_status_to_exit_status(int status) {
     return 1;
 }
 
-int wait_for_process(pid_t pid) {
+int wait_for_process(pid_t pid, int* raw_status = nullptr) {
     int status = 0;
     while (waitpid(pid, &status, 0) < 0) {
         if (errno != EINTR) {
@@ -108,7 +108,31 @@ int wait_for_process(pid_t pid) {
             return 1;
         }
     }
+    if (raw_status != nullptr) {
+        *raw_status = status;
+    }
     return wait_status_to_exit_status(status);
+}
+
+void report_interactive_signal(int status) {
+    if (!isatty(STDIN_FILENO) || !WIFSIGNALED(status)) {
+        return;
+    }
+
+    const int signal_number = WTERMSIG(status);
+    if (signal_number == SIGINT) {
+        cout << '\n' << flush;
+        return;
+    }
+
+    const char* description = strsignal(signal_number);
+    cerr << (description == nullptr ? "Terminated" : description);
+#ifdef WCOREDUMP
+    if (WCOREDUMP(status)) {
+        cerr << " (core dumped)";
+    }
+#endif
+    cerr << '\n' << flush;
 }
 
 [[noreturn]] void exec_external_command(
@@ -172,7 +196,10 @@ int run_external_command(const ParsedCommand& command) {
         }
         exec_external_command(command, *resolution);
     }
-    return wait_for_process(pid);
+    int raw_status = 0;
+    const int status = wait_for_process(pid, &raw_status);
+    report_interactive_signal(raw_status);
+    return status;
 }
 
 int run_function(const string& name, int function_depth) {
@@ -409,11 +436,15 @@ int execute_pipeline(ParsedPipeline pipeline, int function_depth) {
     close_pipes(pipes);
 
     int final_status = 1;
+    int final_raw_status = 0;
     for (size_t i = 0; i < children.size(); ++i) {
-        const int status = wait_for_process(children[i]);
+        int raw_status = 0;
+        const int status = wait_for_process(children[i], &raw_status);
         if (i + 1 == children.size()) {
             final_status = status;
+            final_raw_status = raw_status;
         }
     }
+    report_interactive_signal(final_raw_status);
     return record_status(final_status);
 }

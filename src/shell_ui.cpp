@@ -129,27 +129,35 @@ void draw_launch_screen(int columns, int rows) {
 
 } // namespace
 
+void configure_interactive_signal_handling() {
+    if (!isatty(STDIN_FILENO)) {
+        return;
+    }
+
+    struct sigaction ignore_signal {};
+    ignore_signal.sa_handler = SIG_IGN;
+    sigemptyset(&ignore_signal.sa_mask);
+
+    struct sigaction previous_interrupt {};
+    if (sigaction(SIGINT, &ignore_signal, &previous_interrupt) != 0) {
+        cerr << "myshell: cannot configure SIGINT handling: "
+             << strerror(errno) << '\n';
+        return;
+    }
+    if (sigaction(SIGQUIT, &ignore_signal, nullptr) != 0) {
+        const int signal_error = errno;
+        sigaction(SIGINT, &previous_interrupt, nullptr);
+        cerr << "myshell: cannot configure SIGQUIT handling: "
+             << strerror(signal_error) << '\n';
+    }
+}
+
 void show_launch_screen() {
     int columns = 0;
     int rows = 0;
     if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)
         || !terminal_size(columns, rows)) {
         return;
-    }
-
-    // Interactive Ctrl+C/Ctrl+\\ should stop a command, not the shell.
-    struct sigaction ignore_signal{};
-    ignore_signal.sa_handler = SIG_IGN;
-    sigemptyset(&ignore_signal.sa_mask);
-    struct sigaction previous_interrupt {};
-    if (sigaction(SIGINT, &ignore_signal, &previous_interrupt) != 0) {
-        cerr << "myshell: cannot configure SIGINT handling: "
-             << strerror(errno) << '\n';
-    } else if (sigaction(SIGQUIT, &ignore_signal, nullptr) != 0) {
-        const int signal_error = errno;
-        sigaction(SIGINT, &previous_interrupt, nullptr);
-        cerr << "myshell: cannot configure SIGQUIT handling: "
-             << strerror(signal_error) << '\n';
     }
 
     // Use the regular screen so the banner scrolls like command output.

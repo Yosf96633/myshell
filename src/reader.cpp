@@ -138,6 +138,10 @@ optional<string> read_line(const string& prompt) {
             return string{};
         }
 
+        if (character == 28) { // Ctrl+\: ignored by an interactive shell prompt
+            continue;
+        }
+
         if (character == 127 || character == '\b') {
             if (cursor > 0) {
                 line.erase(cursor - 1, 1);
