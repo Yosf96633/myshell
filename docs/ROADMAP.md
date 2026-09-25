@@ -46,7 +46,7 @@ a fixed release schedule.
 - [x] Connect commands with pipelines.
 - [x] Support environment assignment and expansion.
 - [x] Handle signals correctly in interactive mode.
-- [ ] Add foreground and background job control.
+- [x] Add foreground and background job control.
 - [x] Add command history and basic line editing.
 - [x] Define, inspect, invoke, and remove simple single-line shell functions.
 

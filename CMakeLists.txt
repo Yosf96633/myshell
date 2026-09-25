@@ -13,6 +13,7 @@ add_executable(myshell
     src/executor.cpp
     src/functions.cpp
     src/history.cpp
+    src/job_control.cpp
     src/reader.cpp
     src/shell_ui.cpp
     src/shell_state.cpp

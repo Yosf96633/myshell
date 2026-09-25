@@ -271,6 +271,36 @@ void test_pipelines() {
     expect_pipeline_error("echo 'hello | cat", "unclosed quote in pipeline");
 }
 
+void test_background_pipelines() {
+    auto background = pipeline_from(
+        "printf value | cat &", "background pipeline");
+    if (background) {
+        expect(background->background,
+               "a trailing ampersand should mark the pipeline as background");
+        expect(background->source == "printf value | cat",
+               "the stored job command should omit the trailing ampersand");
+        expect(background->commands.size() == 2,
+               "a background pipeline should retain all stages");
+    }
+
+    auto quoted = pipeline_from("echo '&'", "quoted ampersand");
+    if (quoted) {
+        expect(!quoted->background,
+               "a quoted ampersand should not background the command");
+        expect(quoted->commands[0].arguments == vector<string>({"&"}),
+               "a quoted ampersand should remain an argument");
+    }
+
+    auto descriptor = pipeline_from("echo error 2>&1", "descriptor ampersand");
+    if (descriptor) {
+        expect(!descriptor->background,
+               "a descriptor duplication should not background the command");
+    }
+
+    expect_pipeline_error("echo first & echo second", "non-trailing ampersand");
+    expect_pipeline_error("&", "ampersand without a command");
+}
+
 } // namespace
 
 int main() {
@@ -281,6 +311,7 @@ int main() {
     test_redirections();
     test_command_errors();
     test_pipelines();
+    test_background_pipelines();
 
     if (failure_count != 0) {
         cerr << failure_count << " tokenizer/parser test(s) failed\n";

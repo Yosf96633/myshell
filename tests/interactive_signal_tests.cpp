@@ -171,6 +171,80 @@ bool test_prompt_quit_is_ignored(const string& shell_path) {
     return finish_session(session, ok ? 0 : -1) && ok;
 }
 
+bool test_background_and_foreground(const string& shell_path) {
+    ShellSession session = start_shell(shell_path);
+    bool ok = session.process > 0
+        && read_until(session.terminal, "$ ", session.pending_output);
+    ok = ok && write_all(session.terminal, "/bin/sleep 1 &\n");
+    ok = ok && read_until(session.terminal, "[1] ", session.pending_output);
+    ok = ok && read_until(session.terminal, "$ ", session.pending_output);
+    ok = ok && write_all(session.terminal, "jobs\n");
+    ok = ok && read_until(
+        session.terminal, "Running\t/bin/sleep 1", session.pending_output);
+    ok = ok && read_until(session.terminal, "$ ", session.pending_output);
+    ok = ok && write_all(session.terminal, "fg %1\n");
+    ok = ok && read_until(session.terminal, "/bin/sleep 1\r\n", session.pending_output);
+    ok = ok && read_until(session.terminal, "$ ", session.pending_output);
+    ok = ok && write_all(session.terminal, "exit 0\n");
+    return finish_session(session, ok ? 0 : -1) && ok;
+}
+
+bool test_stop_background_resume_and_interrupt(const string& shell_path) {
+    ShellSession session = start_shell(shell_path);
+    bool ok = session.process > 0
+        && read_until(session.terminal, "$ ", session.pending_output);
+    ok = ok && write_all(
+        session.terminal, "/bin/sh -c 'while :; do :; done'\n");
+    ok = ok && read_until(
+        session.terminal, "Args : while :; do :; done", session.pending_output);
+    this_thread::sleep_for(chrono::milliseconds(100));
+    ok = ok && write_all(session.terminal, string(1, static_cast<char>(26)));
+    ok = ok && read_until(
+        session.terminal,
+        "Stopped\t/bin/sh -c 'while :; do :; done'",
+        session.pending_output);
+    ok = ok && read_until(session.terminal, "$ ", session.pending_output);
+    ok = ok && write_all(session.terminal, "bg %1\n");
+    ok = ok && read_until(
+        session.terminal,
+        "Running\t/bin/sh -c 'while :; do :; done'",
+        session.pending_output);
+    ok = ok && read_until(session.terminal, "$ ", session.pending_output);
+    ok = ok && write_all(session.terminal, "fg %1\n");
+    ok = ok && read_until(
+        session.terminal,
+        "/bin/sh -c 'while :; do :; done'\r\n",
+        session.pending_output);
+    this_thread::sleep_for(chrono::milliseconds(100));
+    ok = ok && write_all(session.terminal, string(1, static_cast<char>(3)));
+    ok = ok && read_until(session.terminal, "$ ", session.pending_output);
+    ok = ok && write_all(session.terminal, "exit\n");
+    return finish_session(session, ok ? 130 : -1) && ok;
+}
+
+bool test_pipeline_process_group(const string& shell_path) {
+    const string command =
+        "/bin/sh -c 'while :; do :; done' | /bin/cat";
+    ShellSession session = start_shell(shell_path);
+    bool ok = session.process > 0
+        && read_until(session.terminal, "$ ", session.pending_output);
+    ok = ok && write_all(session.terminal, command + "\n");
+    ok = ok && read_until(
+        session.terminal, "Args : while :; do :; done", session.pending_output);
+    this_thread::sleep_for(chrono::milliseconds(100));
+    ok = ok && write_all(session.terminal, string(1, static_cast<char>(26)));
+    ok = ok && read_until(
+        session.terminal, "Stopped\t" + command, session.pending_output);
+    ok = ok && read_until(session.terminal, "$ ", session.pending_output);
+    ok = ok && write_all(session.terminal, "fg %1\n");
+    ok = ok && read_until(session.terminal, command + "\r\n", session.pending_output);
+    this_thread::sleep_for(chrono::milliseconds(100));
+    ok = ok && write_all(session.terminal, string(1, static_cast<char>(3)));
+    ok = ok && read_until(session.terminal, "$ ", session.pending_output);
+    ok = ok && write_all(session.terminal, "exit\n");
+    return finish_session(session, ok ? 130 : -1) && ok;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -194,6 +268,18 @@ int main(int argc, char** argv) {
     }
     if (!test_prompt_quit_is_ignored(argv[1])) {
         cerr << "FAIL: Ctrl+\\ should be ignored while reading a prompt\n";
+        ++failures;
+    }
+    if (!test_background_and_foreground(argv[1])) {
+        cerr << "FAIL: background jobs should be listed and foregrounded\n";
+        ++failures;
+    }
+    if (!test_stop_background_resume_and_interrupt(argv[1])) {
+        cerr << "FAIL: stopped jobs should resume with bg and fg\n";
+        ++failures;
+    }
+    if (!test_pipeline_process_group(argv[1])) {
+        cerr << "FAIL: every stage of a pipeline should share one job group\n";
         ++failures;
     }
 

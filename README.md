@@ -32,6 +32,9 @@ The exact username, hostname, and path depend on the current environment.
 | `pwd` | Prints the current working directory. |
 | `echo [arguments...]` | Prints its arguments separated by spaces. |
 | `exit` | Exits the shell. |
+| `jobs` | Lists running and stopped jobs. |
+| `fg [job]` | Continues a job in the foreground. |
+| `bg [job]` | Continues a stopped job in the background. |
 | `hash [options] [name ...]` | Displays or modifies the external-command path cache. |
 | `type [options] name...` | Reports whether names are aliases, builtins, or executable files. |
 | `alias [-p] [name[=value] ...]` | Defines or displays command aliases. |
@@ -52,8 +55,9 @@ External commands are resolved using `PATH`, cached, and executed in a child
 process. Basic single quotes, double quotes, backslash escaping, pipelines,
 redirections, environment assignments, and variable expansion are supported.
 In interactive mode, `Ctrl+C` and `Ctrl+\` affect the foreground command
-without terminating the shell. Job control is not yet implemented. See the
-[roadmap](docs/ROADMAP.md) for the planned direction.
+without terminating the shell. A trailing `&` starts a background job;
+`Ctrl+Z` stops the foreground job; and `jobs`, `fg`, and `bg` inspect or resume
+jobs. See the [roadmap](docs/ROADMAP.md) for the planned direction.
 
 ## Requirements
 

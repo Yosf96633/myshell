@@ -138,17 +138,11 @@ void configure_interactive_signal_handling() {
     ignore_signal.sa_handler = SIG_IGN;
     sigemptyset(&ignore_signal.sa_mask);
 
-    struct sigaction previous_interrupt {};
-    if (sigaction(SIGINT, &ignore_signal, &previous_interrupt) != 0) {
-        cerr << "myshell: cannot configure SIGINT handling: "
-             << strerror(errno) << '\n';
-        return;
-    }
-    if (sigaction(SIGQUIT, &ignore_signal, nullptr) != 0) {
-        const int signal_error = errno;
-        sigaction(SIGINT, &previous_interrupt, nullptr);
-        cerr << "myshell: cannot configure SIGQUIT handling: "
-             << strerror(signal_error) << '\n';
+    for (int signal_number : {SIGINT, SIGQUIT, SIGTSTP, SIGTTIN, SIGTTOU}) {
+        if (sigaction(signal_number, &ignore_signal, nullptr) != 0) {
+            cerr << "myshell: cannot ignore " << strsignal(signal_number)
+                 << ": " << strerror(errno) << '\n';
+        }
     }
 }
 

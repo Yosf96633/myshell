@@ -364,6 +364,7 @@ PipelineParseResult parse_pipeline(const string& line) {
     QuoteMode quote = QuoteMode::none;
     bool escaped = false;
     size_t command_start = 0;
+    size_t input_end = line.size();
 
     const auto append_command = [&](size_t command_end, string& error) {
         ParseResult parsed = parse_command(
@@ -412,16 +413,29 @@ PipelineParseResult parse_pipeline(const string& line) {
                 return {nullopt, move(error)};
             }
             command_start = i + 1;
+        } else if (character == '&'
+                   && (i == 0 || (line[i - 1] != '>' && line[i - 1] != '<'))) {
+            if (line.find_first_not_of(" \t\r\n", i + 1) != string::npos) {
+                return {nullopt, "`&' is only supported at the end of a pipeline"};
+            }
+            pipeline.background = true;
+            input_end = i;
+            break;
         }
     }
 
     // Let the simple-command parser produce its more specific quote/escape error.
     string error;
-    if (!append_command(line.size(), error)) {
+    if (!append_command(input_end, error)) {
         if (pipeline.commands.empty() && line.find_first_not_of(" \t\r\n") == string::npos) {
             return {};
         }
         return {nullopt, move(error)};
+    }
+    const size_t source_start = line.find_first_not_of(" \t\r\n");
+    const size_t source_end = line.find_last_not_of(" \t\r\n", input_end - 1);
+    if (source_start != string::npos && source_end != string::npos) {
+        pipeline.source = line.substr(source_start, source_end - source_start + 1);
     }
     return {move(pipeline), {}};
 }

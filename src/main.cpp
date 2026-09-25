@@ -6,6 +6,7 @@
 #include "myshell/executor.hpp"
 #include "myshell/functions.hpp"
 #include "myshell/history.hpp"
+#include "myshell/job_control.hpp"
 #include "myshell/shell_state.hpp"
 #include <iostream>
 #include <utility>
@@ -13,10 +14,13 @@ using namespace std;
 int main()
 {
     int process_status = 0;
+    initialize_job_control();
     configure_interactive_signal_handling();
     show_launch_screen();
     while (true)
     { // repeat forever until we break
+
+        update_background_jobs();
 
         auto line = read_line(build_prompt());
         if (!line)

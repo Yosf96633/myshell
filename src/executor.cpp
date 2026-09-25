@@ -3,6 +3,7 @@
 #include "myshell/builtins.hpp"
 #include "myshell/exec_builtin.hpp"
 #include "myshell/functions.hpp"
+#include "myshell/job_control.hpp"
 #include "myshell/path_search.hpp"
 #include "myshell/redirection.hpp"
 #include "myshell/shell_state.hpp"
@@ -86,8 +87,12 @@ bool reset_child_signals() {
     struct sigaction default_action {};
     default_action.sa_handler = SIG_DFL;
     sigemptyset(&default_action.sa_mask);
-    return sigaction(SIGINT, &default_action, nullptr) == 0
-        && sigaction(SIGQUIT, &default_action, nullptr) == 0;
+    for (int signal_number : {SIGINT, SIGQUIT, SIGTSTP, SIGTTIN, SIGTTOU}) {
+        if (sigaction(signal_number, &default_action, nullptr) != 0) {
+            return false;
+        }
+    }
+    return true;
 }
 
 int wait_status_to_exit_status(int status) {
@@ -112,27 +117,6 @@ int wait_for_process(pid_t pid, int* raw_status = nullptr) {
         *raw_status = status;
     }
     return wait_status_to_exit_status(status);
-}
-
-void report_interactive_signal(int status) {
-    if (!isatty(STDIN_FILENO) || !WIFSIGNALED(status)) {
-        return;
-    }
-
-    const int signal_number = WTERMSIG(status);
-    if (signal_number == SIGINT) {
-        cout << '\n' << flush;
-        return;
-    }
-
-    const char* description = strsignal(signal_number);
-    cerr << (description == nullptr ? "Terminated" : description);
-#ifdef WCOREDUMP
-    if (WCOREDUMP(status)) {
-        cerr << " (core dumped)";
-    }
-#endif
-    cerr << '\n' << flush;
 }
 
 [[noreturn]] void exec_external_command(
@@ -161,7 +145,7 @@ void report_interactive_signal(int status) {
     _exit(exec_error == ENOENT ? 127 : 126);
 }
 
-int run_external_command(const ParsedCommand& command) {
+int run_external_command(const ParsedCommand& command, const string& source) {
     optional<CommandResolution> resolution;
     if (!assigns_path(command)) {
         resolution = resolve_command_for_execution(command.name);
@@ -175,6 +159,11 @@ int run_external_command(const ParsedCommand& command) {
         return 1;
     }
     if (pid == 0) {
+        if (setpgid(0, 0) < 0) {
+            cerr << command.name << ": cannot create process group: "
+                 << strerror(errno) << '\n' << flush;
+            _exit(1);
+        }
         if (!reset_child_signals()) {
             cerr << "myshell: cannot reset child signals: "
                  << strerror(errno) << '\n' << flush;
@@ -196,10 +185,26 @@ int run_external_command(const ParsedCommand& command) {
         }
         exec_external_command(command, *resolution);
     }
-    int raw_status = 0;
-    const int status = wait_for_process(pid, &raw_status);
-    report_interactive_signal(raw_status);
-    return status;
+    if (setpgid(pid, pid) < 0 && errno != EACCES && errno != ESRCH) {
+        const int group_error = errno;
+        kill(pid, SIGTERM);
+        wait_for_process(pid);
+        cerr << command.name << ": cannot create process group: "
+             << strerror(group_error) << '\n';
+        return 1;
+    }
+    if (!give_terminal_to(pid)) {
+        const int terminal_error = errno;
+        kill(-pid, SIGTERM);
+        wait_for_process(pid);
+        reclaim_shell_terminal();
+        cerr << command.name << ": cannot give terminal to command: "
+             << strerror(terminal_error) << '\n';
+        return 1;
+    }
+    const int job_id = register_job(
+        pid, {pid}, source.empty() ? command.name : source, false);
+    return wait_for_job(job_id);
 }
 
 int run_function(const string& name, int function_depth) {
@@ -298,7 +303,13 @@ void close_pipes(const vector<array<int, 2>>& pipes) {
     ParsedCommand command,
     int function_depth,
     size_t index,
-    const vector<array<int, 2>>& pipes) {
+    const vector<array<int, 2>>& pipes,
+    pid_t process_group) {
+    if (setpgid(0, process_group) < 0) {
+        cerr << "myshell: cannot join job process group: "
+             << strerror(errno) << '\n' << flush;
+        _exit(1);
+    }
     if (!reset_child_signals()) {
         cerr << "myshell: cannot reset child signals: "
              << strerror(errno) << '\n' << flush;
@@ -344,7 +355,10 @@ void close_pipes(const vector<array<int, 2>>& pipes) {
 
 } // namespace
 
-int execute_command(ParsedCommand command, int function_depth) {
+int execute_command(
+    ParsedCommand command,
+    int function_depth,
+    const string& source) {
     string alias_error;
     if (!expand_aliases(command, alias_error)) {
         cerr << "myshell: alias: " << alias_error << '\n';
@@ -379,15 +393,16 @@ int execute_command(ParsedCommand command, int function_depth) {
         return record_status(
             run_parent_command_with_redirections(move(command), function_depth));
     }
-    return record_status(run_external_command(command));
+    return record_status(run_external_command(command, source));
 }
 
 int execute_pipeline(ParsedPipeline pipeline, int function_depth) {
     if (pipeline.empty()) {
         return record_status(0);
     }
-    if (pipeline.commands.size() == 1) {
-        return execute_command(move(pipeline.commands.front()), function_depth);
+    if (pipeline.commands.size() == 1 && !pipeline.background) {
+        return execute_command(
+            move(pipeline.commands.front()), function_depth, pipeline.source);
     }
 
     for (auto& command : pipeline.commands) {
@@ -416,35 +431,72 @@ int execute_pipeline(ParsedPipeline pipeline, int function_depth) {
     cerr.flush();
     vector<pid_t> children;
     children.reserve(pipeline.commands.size());
+    pid_t process_group = 0;
+    bool terminal_given = false;
     for (size_t i = 0; i < pipeline.commands.size(); ++i) {
         const pid_t pid = fork();
         if (pid < 0) {
             const int fork_error = errno;
             close_pipes(pipes);
+            if (process_group > 0) {
+                kill(-process_group, SIGTERM);
+            }
             for (pid_t child : children) {
                 wait_for_process(child);
+            }
+            if (terminal_given) {
+                reclaim_shell_terminal();
             }
             cerr << "myshell: fork: " << strerror(fork_error) << '\n';
             return record_status(1);
         }
         if (pid == 0) {
             run_pipeline_stage(
-                move(pipeline.commands[i]), function_depth, i, pipes);
+                move(pipeline.commands[i]), function_depth, i, pipes, process_group);
+        }
+        if (process_group == 0) {
+            process_group = pid;
+        }
+        if (setpgid(pid, process_group) < 0 && errno != EACCES && errno != ESRCH) {
+            const int group_error = errno;
+            close_pipes(pipes);
+            kill(-process_group, SIGTERM);
+            children.push_back(pid);
+            for (pid_t child : children) {
+                wait_for_process(child);
+            }
+            if (terminal_given) {
+                reclaim_shell_terminal();
+            }
+            cerr << "myshell: setpgid: " << strerror(group_error) << '\n';
+            return record_status(1);
+        }
+        if (i == 0 && !pipeline.background) {
+            if (!give_terminal_to(process_group)) {
+                const int terminal_error = errno;
+                close_pipes(pipes);
+                kill(-process_group, SIGTERM);
+                children.push_back(pid);
+                for (pid_t child : children) {
+                    wait_for_process(child);
+                }
+                reclaim_shell_terminal();
+                cerr << "myshell: tcsetpgrp: " << strerror(terminal_error) << '\n';
+                return record_status(1);
+            }
+            terminal_given = true;
         }
         children.push_back(pid);
     }
     close_pipes(pipes);
 
-    int final_status = 1;
-    int final_raw_status = 0;
-    for (size_t i = 0; i < children.size(); ++i) {
-        int raw_status = 0;
-        const int status = wait_for_process(children[i], &raw_status);
-        if (i + 1 == children.size()) {
-            final_status = status;
-            final_raw_status = raw_status;
-        }
+    const int job_id = register_job(
+        process_group,
+        children,
+        pipeline.source.empty() ? pipeline.commands.front().name : pipeline.source,
+        pipeline.background);
+    if (pipeline.background) {
+        return record_status(0);
     }
-    report_interactive_signal(final_raw_status);
-    return record_status(final_status);
+    return record_status(wait_for_job(job_id));
 }

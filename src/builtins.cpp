@@ -2,6 +2,7 @@
 #include "myshell/exec_builtin.hpp"
 #include "myshell/functions.hpp"
 #include "myshell/history.hpp"
+#include "myshell/job_control.hpp"
 #include "myshell/path_search.hpp"
 #include "myshell/shell_state.hpp"
 #include "myshell/tokenizer.hpp"
@@ -562,12 +563,19 @@ const vector<BuiltinHelp>& help_topics() {
          "Replace the shell or modify its file descriptors.",
          "Without a command, apply redirections to the running shell. With a "
          "command, replace the shell process with that executable."},
+        {"fg", "fg [job]", "Move a job to the foreground.",
+         "Continue JOB in the foreground, or use the most recent job when JOB "
+         "is omitted."},
+        {"bg", "bg [job]", "Resume a job in the background.",
+         "Continue a stopped JOB without giving it control of the terminal."},
         {"hash", "hash [-lr] [-p pathname] [-dt] [name ...]",
          "Remember or display program locations.",
          "Options: -d deletes names, -l prints reusable commands, -p assigns a "
          "pathname, -r clears the table, and -t prints cached paths."},
         {"history", "history", "Display the command history.",
          "Display this session's command history with line numbers."},
+        {"jobs", "jobs", "Display active jobs.",
+         "List running and stopped jobs managed by this shell."},
         {"help", "help [-dms] [pattern ...]", "Display information about builtin commands.",
          "Options: -d prints a short description, -m uses manpage-style output, "
          "and -s prints only the synopsis."},
@@ -821,14 +829,17 @@ int builtin_exit(const std::vector<std::string>& args) {
 
 // The map itself, populated with every builtin we support
 std::unordered_map<std::string, BuiltinFunc> builtins = {
+    {"bg", builtin_bg},
     {"cd", builtin_cd},
     {"declare", builtin_declare},
     {"pwd", builtin_pwd},
     {"echo", builtin_echo},
     {"exit", builtin_exit},
     {"exec", builtin_exec},
+    {"fg", builtin_fg},
     {"hash", builtin_hash},
     {"history", builtin_history},
+    {"jobs", builtin_jobs},
     {"type", builtin_type},
     {"unset", builtin_unset},
     {"alias", builtin_alias},

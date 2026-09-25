@@ -36,6 +36,8 @@ struct ParsedCommand {
 
 struct ParsedPipeline {
     std::vector<ParsedCommand> commands;
+    std::string source;
+    bool background = false;
 
     bool empty() const {
         return commands.empty();
