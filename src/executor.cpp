@@ -14,6 +14,7 @@
 #include <array>
 #include <cerrno>
 #include <csignal>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <optional>
@@ -26,6 +27,53 @@ using namespace std;
 namespace {
 
 constexpr int maximum_function_depth = 64;
+
+struct EnvironmentBackup {
+    string name;
+    optional<string> value;
+};
+
+bool assigns_path(const ParsedCommand& command) {
+    for (const auto& [name, value] : command.environment_assignments) {
+        (void)value;
+        if (name == "PATH") {
+            return true;
+        }
+    }
+    return false;
+}
+
+void restore_environment(const vector<EnvironmentBackup>& backups) {
+    for (auto backup = backups.rbegin(); backup != backups.rend(); ++backup) {
+        if (backup->value) {
+            setenv(backup->name.c_str(), backup->value->c_str(), 1);
+        } else {
+            unsetenv(backup->name.c_str());
+        }
+    }
+}
+
+bool apply_environment(
+    const ParsedCommand& command,
+    vector<EnvironmentBackup>* backups,
+    string& error) {
+    for (const auto& [name, value] : command.environment_assignments) {
+        if (backups != nullptr) {
+            const char* previous = getenv(name.c_str());
+            backups->push_back({
+                name, previous == nullptr ? optional<string>{} : optional<string>{previous}});
+        }
+        if (setenv(name.c_str(), value.c_str(), 1) != 0) {
+            error = name + ": " + strerror(errno);
+            if (backups != nullptr) {
+                restore_environment(*backups);
+                backups->clear();
+            }
+            return false;
+        }
+    }
+    return true;
+}
 
 int record_status(int status) {
     if (status != EXIT_SIGNAL) {
@@ -90,7 +138,10 @@ int wait_for_process(pid_t pid) {
 }
 
 int run_external_command(const ParsedCommand& command) {
-    const CommandResolution resolution = resolve_command_for_execution(command.name);
+    optional<CommandResolution> resolution;
+    if (!assigns_path(command)) {
+        resolution = resolve_command_for_execution(command.name);
+    }
     cout.flush();
     cerr.flush();
 
@@ -105,12 +156,21 @@ int run_external_command(const ParsedCommand& command) {
                  << strerror(errno) << '\n' << flush;
             _exit(1);
         }
+        string environment_error;
+        if (!apply_environment(command, nullptr, environment_error)) {
+            cerr << command.name << ": " << environment_error << '\n' << flush;
+            _exit(1);
+        }
         string error;
         if (!apply_redirections(command.redirections, error)) {
             cerr << command.name << ": " << error << '\n' << flush;
             _exit(1);
         }
-        exec_external_command(command, resolution);
+        if (!resolution) {
+            path_cache.clear();
+            resolution = resolve_command_for_execution(command.name);
+        }
+        exec_external_command(command, *resolution);
     }
     return wait_for_process(pid);
 }
@@ -161,19 +221,40 @@ int run_parent_command_with_redirections(
     cout.flush();
     cerr.flush();
 
+    const bool persistent_environment = command.name.empty();
+    vector<EnvironmentBackup> environment_backups;
+    string environment_error;
+    if (!apply_environment(
+            command,
+            persistent_environment ? nullptr : &environment_backups,
+            environment_error)) {
+        cerr << (command.name.empty() ? "myshell" : command.name)
+             << ": " << environment_error << '\n';
+        return 1;
+    }
+    if (assigns_path(command)) {
+        path_cache.clear();
+    }
+
     vector<DescriptorBackup> backups;
     string error;
     if (!apply_redirections_transactionally(command.redirections, backups, error)) {
         cerr << (command.name.empty() ? "myshell" : command.name)
              << ": " << error << '\n';
+        restore_environment(environment_backups);
         return 1;
     }
     command.redirections.clear();
+    const bool path_was_assigned = assigns_path(command);
     const int status = dispatch_in_current_process(move(command), function_depth);
 
     cout.flush();
     cerr.flush();
     restore_descriptors(backups);
+    restore_environment(environment_backups);
+    if (path_was_assigned && !persistent_environment) {
+        path_cache.clear();
+    }
     cout.clear();
     cerr.clear();
     return status;
@@ -207,6 +288,16 @@ void close_pipes(const vector<array<int, 2>>& pipes) {
     }
     close_pipes(pipes);
 
+    string environment_error;
+    if (!apply_environment(command, nullptr, environment_error)) {
+        cerr << (command.name.empty() ? "myshell" : command.name)
+             << ": " << environment_error << '\n' << flush;
+        _exit(1);
+    }
+    if (assigns_path(command)) {
+        path_cache.clear();
+    }
+
     string error;
     if (!apply_redirections(command.redirections, error)) {
         cerr << (command.name.empty() ? "myshell" : command.name)
@@ -237,7 +328,23 @@ int execute_command(ParsedCommand command, int function_depth) {
     }
 
     if (command.name == "exec") {
-        return record_status(run_exec_builtin(command));
+        const bool persistent_environment = command.arguments.empty();
+        vector<EnvironmentBackup> backups;
+        string error;
+        if (!apply_environment(
+                command, persistent_environment ? nullptr : &backups, error)) {
+            cerr << "exec: " << error << '\n';
+            return record_status(1);
+        }
+        if (assigns_path(command)) {
+            path_cache.clear();
+        }
+        const int status = run_exec_builtin(command);
+        restore_environment(backups);
+        if (assigns_path(command) && !persistent_environment) {
+            path_cache.clear();
+        }
+        return record_status(status);
     }
     if (command.name.empty()
         || is_shell_function(command.name)

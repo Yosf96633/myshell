@@ -38,6 +38,7 @@ struct LexToken {
     string text;
     LexRedirection redirection = LexRedirection::output;
     string target_fd;
+    bool assignment_word = false;
 };
 
 // Expand a parameter beginning at line[position] and advance position past it.
@@ -132,16 +133,26 @@ ParseResult parse_command(const string& line) {
     string word;
     bool token_started = false;
     bool word_can_be_fd = true;
+    bool assignment_candidate = true;
+    bool assignment_equals_seen = false;
 
     enum class QuoteMode { none, single, double_quote };
     QuoteMode quote = QuoteMode::none;
 
     const auto flush_word = [&] {
         if (token_started) {
-            tokens.push_back({LexTokenType::word, move(word), {}, {}});
+            tokens.push_back({
+                LexTokenType::word,
+                move(word),
+                {},
+                {},
+                assignment_candidate && assignment_equals_seen,
+            });
             word.clear();
             token_started = false;
             word_can_be_fd = true;
+            assignment_candidate = true;
+            assignment_equals_seen = false;
         }
     };
 
@@ -186,10 +197,16 @@ ParseResult parse_command(const string& line) {
             quote = QuoteMode::single;
             token_started = true;
             word_can_be_fd = false;
+            if (!assignment_equals_seen) {
+                assignment_candidate = false;
+            }
         } else if (character == '"') {
             quote = QuoteMode::double_quote;
             token_started = true;
             word_can_be_fd = false;
+            if (!assignment_equals_seen) {
+                assignment_candidate = false;
+            }
         } else if (character == '\\') {
             if (i + 1 >= line.size()) {
                 return {nullopt, "trailing escape character"};
@@ -197,6 +214,9 @@ ParseResult parse_command(const string& line) {
             word += line[++i];
             token_started = true;
             word_can_be_fd = false;
+            if (!assignment_equals_seen) {
+                assignment_candidate = false;
+            }
         } else if (character == '$') {
             const size_t original_size = word.size();
             string error;
@@ -211,6 +231,9 @@ ParseResult parse_command(const string& line) {
                 token_started = true;
             }
             word_can_be_fd = false;
+            if (!assignment_equals_seen) {
+                assignment_candidate = false;
+            }
         } else if (character == '<' || character == '>') {
             string target_fd;
             if (token_started && word_can_be_fd) {
@@ -218,6 +241,8 @@ ParseResult parse_command(const string& line) {
                 word.clear();
                 token_started = false;
                 word_can_be_fd = true;
+                assignment_candidate = true;
+                assignment_equals_seen = false;
             } else {
                 flush_word();
             }
@@ -234,10 +259,22 @@ ParseResult parse_command(const string& line) {
                 redirection = LexRedirection::append;
                 ++i;
             }
-            tokens.push_back({LexTokenType::redirection, {}, redirection, move(target_fd)});
+            tokens.push_back({
+                LexTokenType::redirection, {}, redirection, move(target_fd), false});
         } else {
             word += character;
             token_started = true;
+            if (!assignment_equals_seen) {
+                if (character == '=' && !word.empty() && word.size() > 1) {
+                    assignment_equals_seen = assignment_candidate;
+                } else {
+                    const size_t name_position = word.size() - 1;
+                    const bool valid = name_position == 0
+                        ? is_variable_start(character)
+                        : is_variable_character(character);
+                    assignment_candidate = assignment_candidate && valid;
+                }
+            }
             if (!isdigit(static_cast<unsigned char>(character))) {
                 word_can_be_fd = false;
             }
@@ -257,12 +294,12 @@ ParseResult parse_command(const string& line) {
         return {};
     }
 
-    vector<string> words;
+    vector<pair<string, bool>> words;
     ParsedCommand command;
     for (size_t i = 0; i < tokens.size(); ++i) {
         LexToken& token = tokens[i];
         if (token.type == LexTokenType::word) {
-            words.push_back(move(token.text));
+            words.emplace_back(move(token.text), token.assignment_word);
             continue;
         }
 
@@ -301,11 +338,20 @@ ParseResult parse_command(const string& line) {
         command.redirections.push_back(move(redirection));
     }
 
-    if (!words.empty()) {
-        command.name = move(words.front());
-        command.arguments.assign(
-            make_move_iterator(words.begin() + 1),
-            make_move_iterator(words.end()));
+    size_t word_index = 0;
+    while (word_index < words.size() && words[word_index].second) {
+        string assignment = move(words[word_index].first);
+        const size_t equals = assignment.find('=');
+        command.environment_assignments.emplace_back(
+            assignment.substr(0, equals), assignment.substr(equals + 1));
+        ++word_index;
+    }
+    if (word_index < words.size()) {
+        command.name = move(words[word_index].first);
+        ++word_index;
+        for (; word_index < words.size(); ++word_index) {
+            command.arguments.push_back(move(words[word_index].first));
+        }
     }
     command.present = !words.empty() || !command.redirections.empty();
     return {move(command), {}};

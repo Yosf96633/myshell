@@ -49,9 +49,10 @@ Pressing Enter on an empty line displays another prompt. Pressing `Ctrl+D`
 sends end-of-file and also exits the program cleanly.
 
 External commands are resolved using `PATH`, cached, and executed in a child
-process. Basic single quotes, double quotes, and backslash escaping are
-supported. Pipes, redirection, variable expansion, and job control are not yet
-implemented. See the [roadmap](docs/ROADMAP.md) for the planned direction.
+process. Basic single quotes, double quotes, backslash escaping, pipelines,
+redirections, environment assignments, and variable expansion are supported.
+Job control is not yet implemented. See the [roadmap](docs/ROADMAP.md) for the
+planned direction.
 
 ## Requirements
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 enum class RedirectionType {
@@ -18,10 +19,13 @@ struct Redirection {
     int source_fd = -1;
 };
 
+using EnvironmentAssignment = std::pair<std::string, std::string>;
+
 // The parser's representation of one executable command.
 struct ParsedCommand {
     std::string name;
     std::vector<std::string> arguments;
+    std::vector<EnvironmentAssignment> environment_assignments;
     std::vector<Redirection> redirections;
     bool present = false;
 

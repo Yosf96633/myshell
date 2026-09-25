@@ -44,7 +44,7 @@ a fixed release schedule.
 
 - [x] Add input and output redirection.
 - [x] Connect commands with pipelines.
-- [ ] Support environment assignment and expansion.
+- [x] Support environment assignment and expansion.
 - [ ] Handle signals correctly in interactive mode.
 - [ ] Add foreground and background job control.
 - [x] Add command history and basic line editing.

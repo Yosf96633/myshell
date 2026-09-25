@@ -128,6 +128,52 @@ void test_parameter_expansion() {
     unsetenv("MYSHELL_TEST_VALUE");
 }
 
+void test_environment_assignments() {
+    setenv("MYSHELL_ASSIGNMENT_SOURCE", "expanded", 1);
+    auto assignment_only = command_from(
+        "FIRST=value SECOND='two words' EMPTY= COPY=$MYSHELL_ASSIGNMENT_SOURCE",
+        "assignment-only command");
+    if (assignment_only) {
+        expect(assignment_only->name.empty(),
+               "assignment-only input should not have a command name");
+        expect(assignment_only->environment_assignments
+                   == vector<EnvironmentAssignment>({
+                       {"FIRST", "value"},
+                       {"SECOND", "two words"},
+                       {"EMPTY", ""},
+                       {"COPY", "expanded"}}),
+               "leading assignments should be parsed separately");
+    }
+
+    auto prefixed = command_from(
+        "MODE=test /bin/echo MODE=argument", "command-prefixed assignment");
+    if (prefixed) {
+        expect(prefixed->environment_assignments
+                   == vector<EnvironmentAssignment>({{"MODE", "test"}}),
+               "only leading assignment words should affect the environment");
+        expect(prefixed->name == "/bin/echo", "prefixed command name");
+        expect(prefixed->arguments == vector<string>({"MODE=argument"}),
+               "assignment-shaped words after the command should be arguments");
+    }
+
+    auto quoted_name = command_from("'NAME'=value", "quoted assignment name");
+    if (quoted_name) {
+        expect(quoted_name->environment_assignments.empty(),
+               "a quoted variable name should not be an assignment");
+        expect(quoted_name->name == "NAME=value",
+               "a quoted assignment-shaped word should remain a command name");
+    }
+
+    auto invalid_name = command_from("1NAME=value", "invalid assignment name");
+    if (invalid_name) {
+        expect(invalid_name->environment_assignments.empty(),
+               "an invalid variable name should not be an assignment");
+        expect(invalid_name->name == "1NAME=value",
+               "an invalid assignment-shaped word should remain a command name");
+    }
+    unsetenv("MYSHELL_ASSIGNMENT_SOURCE");
+}
+
 void test_redirections() {
     auto parsed = command_from(
         "cat 3<input 4>>output 2>&1 5>&- <&7", "descriptor redirections");
@@ -231,6 +277,7 @@ int main() {
     test_empty_input();
     test_words_quotes_and_escapes();
     test_parameter_expansion();
+    test_environment_assignments();
     test_redirections();
     test_command_errors();
     test_pipelines();

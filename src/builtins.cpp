@@ -699,23 +699,39 @@ bool expand_aliases(ParsedCommand& command, string& error) {
         }
 
         vector<string> trailing_arguments = move(command.arguments);
+        vector<EnvironmentAssignment> leading_assignments =
+            move(command.environment_assignments);
         vector<Redirection> trailing_redirections = move(command.redirections);
         if (!replacement.command) {
             if (trailing_arguments.empty()) {
                 command = {};
                 command.redirections = move(trailing_redirections);
-                command.present = !command.redirections.empty();
+                command.environment_assignments = move(leading_assignments);
+                command.present = !command.redirections.empty()
+                    || !command.environment_assignments.empty();
                 break;
             }
             command.name = move(trailing_arguments.front());
             command.arguments.assign(
                 make_move_iterator(trailing_arguments.begin() + 1),
                 make_move_iterator(trailing_arguments.end()));
+            command.environment_assignments = move(leading_assignments);
             command.redirections = move(trailing_redirections);
             continue;
         }
 
         command = move(*replacement.command);
+        if (command.name.empty() && !trailing_arguments.empty()) {
+            command.name = move(trailing_arguments.front());
+            command.arguments.assign(
+                make_move_iterator(trailing_arguments.begin() + 1),
+                make_move_iterator(trailing_arguments.end()));
+            trailing_arguments.clear();
+        }
+        command.environment_assignments.insert(
+            command.environment_assignments.begin(),
+            make_move_iterator(leading_assignments.begin()),
+            make_move_iterator(leading_assignments.end()));
         command.arguments.insert(
             command.arguments.end(),
             make_move_iterator(trailing_arguments.begin()),

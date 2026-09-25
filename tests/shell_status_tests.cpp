@@ -123,6 +123,31 @@ int main(int argc, char** argv) {
         {"status expansion", "/bin/sh -c 'exit 23'\nexit $?\n", 23},
         {"function-time status expansion",
          "finish() { exit $?; }\n/bin/sh -c 'exit 31'\nfinish\n", 31},
+        {"persistent environment assignment",
+         "MYSHELL_PERSIST=kept\n/bin/sh -c 'test \"$MYSHELL_PERSIST\" = kept'\n", 0},
+        {"temporary environment assignment",
+         "MYSHELL_TEMP=visible /bin/sh -c 'test \"$MYSHELL_TEMP\" = visible'\n", 0},
+        {"temporary assignment does not leak",
+         "MYSHELL_NO_LEAK=value /bin/true\n"
+         "/bin/sh -c 'test -z \"${MYSHELL_NO_LEAK+x}\"'\n", 0},
+        {"temporary assignment restores previous value",
+         "MYSHELL_RESTORE=outer\nMYSHELL_RESTORE=inner /bin/true\n"
+         "/bin/sh -c 'test \"$MYSHELL_RESTORE\" = outer'\n", 0},
+        {"builtin assignment is temporary",
+         "MYSHELL_BUILTIN=outer\nMYSHELL_BUILTIN=inner echo ignored\n"
+         "/bin/sh -c 'test \"$MYSHELL_BUILTIN\" = outer'\n", 0},
+        {"empty environment assignment",
+         "MYSHELL_EMPTY=\n/bin/sh -c 'test -z \"$MYSHELL_EMPTY\"'\n", 0},
+        {"assigned PATH resolves command", "PATH=/bin true\n", 0},
+        {"pipeline environment assignment",
+         "/bin/true | MYSHELL_PIPE=value /bin/sh -c "
+         "'test \"$MYSHELL_PIPE\" = value'\n", 0},
+        {"function environment assignment",
+         "check_env() { /bin/sh -c 'test \"$MYSHELL_FUNCTION\" = value'; }\n"
+         "MYSHELL_FUNCTION=value check_env\n", 0},
+        {"exec environment assignment",
+         "MYSHELL_EXEC=value exec /bin/sh -c "
+         "'test \"$MYSHELL_EXEC\" = value'\n", 0},
     };
 
     int failures = 0;
