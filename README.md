@@ -79,45 +79,57 @@ Alternatively, compile all sources directly:
 
 ```bash
 g++ -std=c++20 -Wall -Wextra -Iinclude \
-    src/main.cpp src/builtins.cpp src/path_search.cpp src/prompt.cpp \
-    src/reader.cpp src/tokenizer.cpp \
+    src/*.cpp \
     -o myshell
 ./myshell
 ```
 
 ## Project layout
 
+For the component boundaries and execution flow, see the
+[architecture documentation](docs/ARCHITECTURE.md).
+
 ```text
 .
 ├── CMakeLists.txt
 ├── include/myshell/
 │   ├── builtins.hpp
+│   ├── executor.hpp
+│   ├── job_control.hpp
+│   ├── parsed_command.hpp
 │   ├── path_search.hpp
-│   ├── prompt.hpp
-│   ├── reader.hpp
-│   └── tokenizer.hpp
+│   ├── redirection.hpp
+│   └── ...
 ├── src/
 │   ├── builtins.cpp
+│   ├── executor.cpp
+│   ├── job_control.cpp
 │   ├── main.cpp
 │   ├── path_search.cpp
-│   ├── prompt.cpp
 │   ├── reader.cpp
-│   └── tokenizer.cpp
+│   ├── redirection.cpp
+│   ├── tokenizer.cpp
+│   └── ...
 └── docs/
+    ├── ARCHITECTURE.md
     └── ROADMAP.md
 ```
 
 - `src/main.cpp` runs the interactive loop and dispatches commands.
-- `src/builtins.cpp` registers and implements `cd`, `pwd`, `echo`, `exit`,
-  `hash`, `type`, `alias`, and `help`, and performs alias expansion.
+- `src/tokenizer.cpp` parses commands, pipelines, expansions, assignments, and
+  redirections into the dedicated parsed-command model.
+- `src/executor.cpp` dispatches built-ins and functions or launches child
+  processes and pipelines.
+- `src/builtins.cpp` contains the built-in registry, implementations, help
+  topics, and alias expansion.
+- `src/job_control.cpp` tracks jobs and manages process groups and terminal
+  ownership.
+- `src/redirection.cpp` applies child redirections and transactional parent
+  redirections.
 - `src/path_search.cpp` resolves external commands and maintains their cached
   paths and hit counts.
-- `src/prompt.cpp` builds the colored prompt from the user, host, and current
-  directory.
 - `src/reader.cpp` displays a supplied prompt and reads a line, using an empty
   `std::optional` to signal end-of-file.
-- `src/tokenizer.cpp` splits command lines while respecting basic quotes and
-  backslash escapes.
 - `include/myshell/` contains public declarations for shell components.
 
 ## Contributing
