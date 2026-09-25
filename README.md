@@ -1,69 +1,82 @@
 # myShell
 
-`myShell` is an early-stage Unix-like shell written in C++20. It currently
-provides a colored, context-aware prompt, reads commands one line at a time,
-splits each non-empty line into whitespace-separated tokens, and supports a
-small builtin-command system.
+`myShell` is a Unix-like command shell written in C++20. It combines a
+quote-aware parser with external command execution, pipelines, redirections,
+environment expansion, aliases, shell functions, command history, signal
+handling, and foreground/background job control.
 
-## Current status
+The project is designed as a practical systems-programming implementation with
+clear component boundaries for parsing, execution, file descriptors, process
+groups, and terminal ownership.
 
-The executable repeatedly displays a prompt containing the username, hostname,
-and current working directory. The `user@host` portion is green and the path is
-blue in a compatible terminal. Each entered line is tokenized and dispatched
-through the builtin-command registry.
+## Features
+
+- Interactive colored prompt showing the user, host, and working directory
+- Single and double quotes, backslash escaping, and clear syntax errors
+- Parameter expansion for `$NAME`, `${NAME}`, `$$`, and `$?`
+- Persistent and command-scoped environment assignments
+- Input, output, append, descriptor-duplication, and descriptor-close
+  redirections
+- Concurrent pipelines with final-stage exit status reporting
+- External command lookup through `PATH` with a reusable command cache
+- Command aliases and simple single-line shell functions
+- Session command history with basic arrow-key line editing
+- Interactive `Ctrl+C`, `Ctrl+\`, and `Ctrl+Z` handling
+- Foreground and background jobs with `&`, `jobs`, `fg`, and `bg`
+- Automated parser, status, signal, and pseudo-terminal integration tests
+
+## Example session
 
 ```text
 $ ./build/myshell
 yosf@computer:/home/yosf/Desktop/my-shell$ pwd
 /home/yosf/Desktop/my-shell
-yosf@computer:/home/yosf/Desktop/my-shell$ cd /tmp
-yosf@computer:/tmp$ pwd
-/tmp
-yosf@computer:/tmp$ exit
+yosf@computer:/home/yosf/Desktop/my-shell$ NAME=world
+yosf@computer:/home/yosf/Desktop/my-shell$ echo "hello $NAME" | tr a-z A-Z
+HELLO WORLD
+yosf@computer:/home/yosf/Desktop/my-shell$ sleep 30 &
+[1] 12345
+yosf@computer:/home/yosf/Desktop/my-shell$ jobs
+[1] Running    sleep 30
+yosf@computer:/home/yosf/Desktop/my-shell$ fg %1
+sleep 30
+^C
 ```
 
-The exact username, hostname, and path depend on the current environment.
+The exact prompt values and process ID depend on the environment.
 
-### Builtin commands
+## Built-in commands
 
 | Command | Behavior |
 | --- | --- |
-| `cd <directory>` | Changes the current working directory. |
-| `pwd` | Prints the current working directory. |
-| `echo [arguments...]` | Prints its arguments separated by spaces. |
-| `exit` | Exits the shell. |
-| `jobs` | Lists running and stopped jobs. |
-| `fg [job]` | Continues a job in the foreground. |
-| `bg [job]` | Continues a stopped job in the background. |
-| `hash [options] [name ...]` | Displays or modifies the external-command path cache. |
-| `type [options] name...` | Reports whether names are aliases, builtins, or executable files. |
 | `alias [-p] [name[=value] ...]` | Defines or displays command aliases. |
+| `bg [job]` | Continues a stopped job in the background. |
+| `cd <directory>` | Changes the shell's working directory. |
+| `declare -f\|-F [name ...]` | Displays shell-function definitions or names. |
+| `echo [arguments...]` | Prints its arguments separated by spaces. |
+| `exec [command [argument ...]]` | Replaces the shell or applies persistent redirections. |
+| `exit [status]` | Exits with an explicit or previous command status. |
+| `fg [job]` | Continues a job in the foreground. |
+| `hash [options] [name ...]` | Displays or modifies the external-command path cache. |
 | `help [-dms] [pattern ...]` | Displays help for supported builtins. |
+| `history` | Displays commands entered during the current session. |
+| `jobs` | Lists running and stopped jobs. |
+| `pwd` | Prints the current working directory. |
+| `type [-afptP] name ...` | Reports how command names would be resolved. |
+| `unset -f [name ...]` | Removes shell-function definitions. |
 
-The `hash` builtin supports Bash-style `-d`, `-l`, `-p pathname`, `-r`, and
-`-t` options. Its default display includes both the cached path and its hit
-count.
+Run `help` to list built-ins or `help <name>` for command-specific details.
+Alias values may contain multiple words when quoted, for example
+`alias ll='ls -l'`.
 
-`type` supports `-a`, `-f`, `-p`, `-P`, and `-t`; `alias` supports `-p`; and
-`help` supports `-d`, `-m`, and `-s`. Alias values may contain multiple words
-when quoted, for example `alias ll='ls -l'`.
-
-Pressing Enter on an empty line displays another prompt. Pressing `Ctrl+D`
-sends end-of-file and also exits the program cleanly.
-
-External commands are resolved using `PATH`, cached, and executed in a child
-process. Basic single quotes, double quotes, backslash escaping, pipelines,
-redirections, environment assignments, and variable expansion are supported.
-In interactive mode, `Ctrl+C` and `Ctrl+\` affect the foreground command
-without terminating the shell. A trailing `&` starts a background job;
-`Ctrl+Z` stops the foreground job; and `jobs`, `fg`, and `bg` inspect or resume
-jobs. See the [roadmap](docs/ROADMAP.md) for the planned direction.
+See the [roadmap](docs/ROADMAP.md) for planned project work.
 
 ## Requirements
 
 - A C++20-compatible compiler (GCC 10+, Clang 10+, or equivalent)
 - CMake 3.16 or newer
-- A Unix-like environment providing `gethostname()`, `getcwd()`, and `chdir()`
+- A Unix-like environment with POSIX process, signal, file-descriptor, and
+  terminal APIs
 
 ## Build and run
 
@@ -83,6 +96,26 @@ g++ -std=c++20 -Wall -Wextra -Iinclude \
     -o myshell
 ./myshell
 ```
+
+## Testing
+
+Configure the project with testing enabled, build it, and run the complete test
+suite:
+
+```bash
+cmake -S . -B build -DBUILD_TESTING=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+The suite covers:
+
+- Tokenization, quoting, expansion, assignments, redirections, and pipelines
+- Exit statuses, external execution, environment behavior, and functions
+- Interactive signals, process groups, terminal handoff, and job control
+
+The interactive tests use pseudo-terminals so they exercise the same terminal
+semantics as a real shell session.
 
 ## Project layout
 
