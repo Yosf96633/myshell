@@ -1,4 +1,5 @@
 #include "myshell/builtins.hpp"
+#include "myshell/explain.hpp"
 #include "myshell/exec_builtin.hpp"
 #include "myshell/functions.hpp"
 #include "myshell/history.hpp"
@@ -556,6 +557,12 @@ const vector<BuiltinHelp>& help_topics() {
          "Use -f to display definitions or -F to display function names."},
         {"echo", "echo [argument ...]", "Write arguments to standard output.",
          "Display the arguments separated by one space, followed by a newline."},
+        {"explain", "explain [--verbose] [--] [command ...]",
+         "Run a command and explain it, or explain the last execution.",
+         "The prefix covers the whole pipeline. Without a command, describe "
+         "the saved execution without running it again. Use --verbose for "
+         "expanded arguments and extra detail. Explanations use deterministic "
+         "parser and execution records."},
         {"exit", "exit [status]", "Exit the shell.",
          "Stop the shell using STATUS, or the most recent command status when "
          "STATUS is omitted."},
@@ -755,16 +762,19 @@ bool expand_aliases(ParsedCommand& command, string& error) {
 // The actual cd implementation
 int builtin_cd(const std::vector<std::string>& args) {
     if (args.empty()) {
+        observe_explained_error("cd: missing argument");
         cerr << "cd: missing argument\n";
         return 1;
     }
     if (args.size() > 1) {
+        observe_explained_error("cd: too many arguments");
         cerr << "cd: too many arguments\n";
         return 1;
     }
 
     if (chdir(args[0].c_str()) != 0) {
         const int change_error = errno;
+        observe_explained_error("cd: " + args[0] + ": " + strerror(change_error));
         cerr << "cd: " << args[0] << ": " << strerror(change_error) << '\n';
         return 1;
     }
@@ -836,6 +846,7 @@ std::unordered_map<std::string, BuiltinFunc> builtins = {
     {"echo", builtin_echo},
     {"exit", builtin_exit},
     {"exec", builtin_exec},
+    {"explain", builtin_explain},
     {"fg", builtin_fg},
     {"hash", builtin_hash},
     {"history", builtin_history},

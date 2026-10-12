@@ -55,7 +55,7 @@ contains the data passed from parsing to execution.
 - `ParsedCommand` holds the command name, arguments, leading environment
   assignments, and ordered redirections.
 - `ParsedPipeline` holds one or more commands, the original display text, and
-  whether a trailing `&` requested background execution.
+  whether a trailing `&` requested background execution, and explanation flags.
 - `Redirection` represents file opens, appends, descriptor duplication, and
   descriptor closure without performing them during parsing.
 
@@ -111,6 +111,27 @@ Child execution follows a fixed order:
 
 The status of the final pipeline stage is the pipeline status. Normal exits
 use their exit code; signal termination uses `128 + signal`.
+
+## Deterministic explanations
+
+The parser removes an unquoted `explain [--verbose] [--]` prefix before parsing
+and expanding the target pipeline. A bare `explain`, including inspection
+redirections, remains a registered built-in. Target commands use the same
+executor as ordinary input.
+
+[`src/explain.cpp`](../src/explain.cpp) owns an execution frame for each
+pipeline. The executor records each command immediately after alias expansion;
+job control supplies foreground process statuses before removing completed
+jobs. Parent-side function calls attach nested frames to their caller, and
+directory snapshots capture observable `cd` effects. These records describe
+what was parsed and dispatched without reparsing history under changed state.
+
+After execution, prefix mode renders the frame using fixed descriptions and
+ordered descriptor destination rules. The last top-level execution is retained
+in memory for bare `explain`; inspection does not replace it or rerun the
+command. Syntax failures and function registrations also replace the saved
+record. Background records describe launch only, and child function steps are
+not transferred to the parent. Program internals are not traced.
 
 ## Environment and command lookup
 
@@ -192,12 +213,14 @@ to know how prompts are drawn or keystrokes are decoded.
 
 ## Tests
 
-CTest builds three test executables:
+CTest builds four test executables:
 
 - `tokenizer_tests` checks parsing, quoting, expansion, redirection syntax,
   pipelines, assignments, and background syntax.
 - `shell_status_tests` runs non-interactive shell sessions and verifies exit
   statuses plus environment behavior.
+- `explain_tests` verifies saved execution, aliases, functions, assignments,
+  pipeline statuses, redirection order, failures, and inspection without reruns.
 - `interactive_signal_tests` uses pseudo-terminals to verify control-character
   handling, process groups, stopping, background execution, and `jobs`/`fg`/`bg`.
 

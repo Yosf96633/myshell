@@ -358,6 +358,44 @@ ParseResult parse_command(const string& line) {
 }
 
 PipelineParseResult parse_pipeline(const string& line) {
+    // Peel off the prefix before parsing/expanding the target. This preserves
+    // assignments, quotes, redirection order, and the scope of the whole pipe.
+    const size_t start = line.find_first_not_of(" \t\r\n");
+    if (start != string::npos && line.compare(start, 7, "explain") == 0
+        && start + 7 < line.size()
+        && isspace(static_cast<unsigned char>(line[start + 7]))) {
+        size_t target = line.find_first_not_of(" \t\r\n", start + 7);
+        bool verbose = false;
+        auto consume = [&](const string& option) {
+            if (target == string::npos || line.compare(target, option.size(), option) != 0)
+                return false;
+            const size_t end = target + option.size();
+            if (end < line.size() && !isspace(static_cast<unsigned char>(line[end])))
+                return false;
+            target = line.find_first_not_of(" \t\r\n", end);
+            return true;
+        };
+        verbose = consume("--verbose");
+        const bool options_ended = consume("--");
+        if (target != string::npos && line[target] != '|' && line[target] != '&'
+            && (options_ended || line[target] != '-')) {
+            auto parsed = parse_pipeline(line.substr(target));
+            // A redirection without a target command redirects inspection,
+            // e.g. `explain 2>errors`. Leading redirections with a command,
+            // e.g. `explain >file echo hello`, belong to prefix execution.
+            const bool inspection_redirection = parsed.pipeline
+                && parsed.pipeline->commands.size() == 1
+                && parsed.pipeline->commands.front().name.empty()
+                && parsed.pipeline->commands.front().environment_assignments.empty();
+            if (!inspection_redirection) {
+                if (parsed.pipeline) {
+                    parsed.pipeline->explain_requested = true;
+                    parsed.pipeline->explain_verbose |= verbose;
+                }
+                return parsed;
+            }
+        }
+    }
     enum class QuoteMode { none, single, double_quote };
 
     ParsedPipeline pipeline;

@@ -274,7 +274,7 @@ int register_job(
     return id;
 }
 
-int wait_for_job(int job_id) {
+int wait_for_job(int job_id, vector<optional<int>>* statuses, bool* completed) {
     Job* job = find_job(job_id);
     if (job == nullptr) {
         return 1;
@@ -314,6 +314,14 @@ int wait_for_job(int job_id) {
             tcgetattr(STDIN_FILENO, &job->terminal_modes) == 0;
     }
     reclaim_shell_terminal();
+    if (statuses != nullptr) {
+        statuses->clear();
+        for (const auto& process : job->processes) {
+            statuses->push_back(process.completed || process.stopped
+                ? optional<int>{process_exit_status(process.status)} : nullopt);
+        }
+    }
+    if (completed != nullptr) *completed = job_completed(*job);
     const int result = final_job_status(*job);
     if (job_completed(*job)) {
         report_signal_status(job->processes.back().status);

@@ -1,4 +1,5 @@
 #include "myshell/executor.hpp"
+#include "myshell/explain.hpp"
 
 #include "myshell/builtins.hpp"
 #include "myshell/exec_builtin.hpp"
@@ -204,11 +205,16 @@ int run_external_command(const ParsedCommand& command, const string& source) {
     }
     const int job_id = register_job(
         pid, {pid}, source.empty() ? command.name : source, false);
-    return wait_for_job(job_id);
+    vector<optional<int>> statuses;
+    bool completed = false;
+    const int result = wait_for_job(job_id, &statuses, &completed);
+    observe_explained_statuses(statuses, completed);
+    return result;
 }
 
 int run_function(const string& name, int function_depth) {
     if (function_depth >= maximum_function_depth) {
+        observe_explained_error(name + ": maximum function recursion depth exceeded");
         cerr << name << ": maximum function recursion depth exceeded\n";
         return 1;
     }
@@ -219,6 +225,7 @@ int run_function(const string& name, int function_depth) {
     for (const auto& command : function.commands) {
         PipelineParseResult parsed = parse_pipeline(command.source);
         if (parsed.has_error() || !parsed.pipeline) {
+            observe_explained_error(name + ": " + parsed.error);
             cerr << name << ": cannot parse stored function command: "
                  << parsed.error << '\n';
             return record_status(2);
@@ -260,6 +267,7 @@ int run_parent_command_with_redirections(
             command,
             persistent_environment ? nullptr : &environment_backups,
             environment_error)) {
+        observe_explained_error(environment_error);
         cerr << (command.name.empty() ? "myshell" : command.name)
              << ": " << environment_error << '\n';
         return 1;
@@ -271,6 +279,7 @@ int run_parent_command_with_redirections(
     vector<DescriptorBackup> backups;
     string error;
     if (!apply_redirections_transactionally(command.redirections, backups, error)) {
+        observe_explained_error("Redirection failed: " + error);
         cerr << (command.name.empty() ? "myshell" : command.name)
              << ": " << error << '\n';
         restore_environment(environment_backups);
@@ -361,9 +370,11 @@ int execute_command(
     const string& source) {
     string alias_error;
     if (!expand_aliases(command, alias_error)) {
+        observe_explained_error("Alias expansion failed: " + alias_error);
         cerr << "myshell: alias: " << alias_error << '\n';
         return record_status(2);
     }
+    observe_explained_command(command, 0);
     if (command.empty()) {
         return record_status(0);
     }
@@ -374,6 +385,7 @@ int execute_command(
         string error;
         if (!apply_environment(
                 command, persistent_environment ? nullptr : &backups, error)) {
+            observe_explained_error(error);
             cerr << "exec: " << error << '\n';
             return record_status(1);
         }
@@ -396,7 +408,7 @@ int execute_command(
     return record_status(run_external_command(command, source));
 }
 
-int execute_pipeline(ParsedPipeline pipeline, int function_depth) {
+static int execute_pipeline_impl(ParsedPipeline pipeline, int function_depth) {
     if (pipeline.empty()) {
         return record_status(0);
     }
@@ -405,12 +417,15 @@ int execute_pipeline(ParsedPipeline pipeline, int function_depth) {
             move(pipeline.commands.front()), function_depth, pipeline.source);
     }
 
-    for (auto& command : pipeline.commands) {
+    for (size_t index = 0; index < pipeline.commands.size(); ++index) {
+        auto& command = pipeline.commands[index];
         string alias_error;
         if (!expand_aliases(command, alias_error)) {
+            observe_explained_error("Alias expansion failed: " + alias_error);
             cerr << "myshell: alias: " << alias_error << '\n';
             return record_status(2);
         }
+        observe_explained_command(command, index);
     }
 
     vector<array<int, 2>> pipes(pipeline.commands.size() - 1);
@@ -498,5 +513,16 @@ int execute_pipeline(ParsedPipeline pipeline, int function_depth) {
     if (pipeline.background) {
         return record_status(0);
     }
-    return record_status(wait_for_job(job_id));
+    vector<optional<int>> statuses;
+    bool completed = false;
+    const int result = wait_for_job(job_id, &statuses, &completed);
+    observe_explained_statuses(statuses, completed);
+    return record_status(result);
+}
+
+int execute_pipeline(ParsedPipeline pipeline, int function_depth) {
+    ExplanationFrame explanation(pipeline);
+    const int status = execute_pipeline_impl(move(pipeline), function_depth);
+    explanation.finish(status);
+    return status;
 }

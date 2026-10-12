@@ -38,6 +38,8 @@ struct ParsedPipeline {
     std::vector<ParsedCommand> commands;
     std::string source;
     bool background = false;
+    bool explain_requested = false;
+    bool explain_verbose = false;
 
     bool empty() const {
         return commands.empty();

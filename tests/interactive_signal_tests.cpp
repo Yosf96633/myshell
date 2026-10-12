@@ -104,6 +104,18 @@ struct ShellSession {
     string pending_output;
 };
 
+bool wait_for_foreground_job(const ShellSession& session) {
+    const auto deadline = chrono::steady_clock::now()
+        + chrono::milliseconds(io_timeout_ms);
+    while (chrono::steady_clock::now() < deadline) {
+        const pid_t group = tcgetpgrp(session.terminal);
+        if (group > 0 && group != session.process) return true;
+        this_thread::sleep_for(chrono::milliseconds(10));
+    }
+    cerr << "timed out waiting for foreground terminal handoff\n";
+    return false;
+}
+
 ShellSession start_shell(const string& shell_path) {
     int terminal = -1;
     winsize size{}; // A zero size skips the decorative banner.
@@ -153,13 +165,39 @@ bool test_foreground_signal(
         && read_until(session.terminal, "$ ", session.pending_output);
     ok = ok && write_all(
         session.terminal, "/bin/sh -c 'while :; do :; done'\n");
-    ok = ok && read_until(
-        session.terminal, "Args : while :; do :; done", session.pending_output);
+    ok = ok && wait_for_foreground_job(session);
     this_thread::sleep_for(chrono::milliseconds(100));
     ok = ok && write_all(session.terminal, string(1, control_character));
     ok = ok && read_until(session.terminal, "$ ", session.pending_output);
     ok = ok && write_all(session.terminal, "exit\n");
     return finish_session(session, ok ? expected_status : -1) && ok;
+}
+
+bool test_explained_foreground_signal(const string& shell_path, bool stop_first) {
+    ShellSession session = start_shell(shell_path);
+    bool ok = session.process > 0
+        && read_until(session.terminal, "$ ", session.pending_output);
+    ok = ok && write_all(session.terminal,
+        "explain /bin/sh -c 'while :; do :; done'\n");
+    ok = ok && wait_for_foreground_job(session);
+    this_thread::sleep_for(chrono::milliseconds(100));
+    ok = ok && write_all(session.terminal, string(1, static_cast<char>(stop_first ? 26 : 3)));
+    ok = ok && read_until(session.terminal,
+        stop_first ? "job stopped or incomplete" : "Result: status 130", session.pending_output);
+    ok = ok && read_until(session.terminal, "$ ", session.pending_output);
+    if (stop_first) {
+        ok = ok && write_all(session.terminal, "fg %1\n");
+        ok = ok && wait_for_foreground_job(session);
+        this_thread::sleep_for(chrono::milliseconds(100));
+        ok = ok && write_all(session.terminal, string(1, static_cast<char>(3)));
+        ok = ok && read_until(session.terminal, "$ ", session.pending_output);
+    } else {
+        ok = ok && write_all(session.terminal, "explain\n");
+        ok = ok && read_until(session.terminal, "Result: status 130", session.pending_output);
+        ok = ok && read_until(session.terminal, "$ ", session.pending_output);
+    }
+    ok = ok && write_all(session.terminal, "exit\n");
+    return finish_session(session, ok ? 130 : -1) && ok;
 }
 
 bool test_prompt_quit_is_ignored(const string& shell_path) {
@@ -195,8 +233,7 @@ bool test_stop_background_resume_and_interrupt(const string& shell_path) {
         && read_until(session.terminal, "$ ", session.pending_output);
     ok = ok && write_all(
         session.terminal, "/bin/sh -c 'while :; do :; done'\n");
-    ok = ok && read_until(
-        session.terminal, "Args : while :; do :; done", session.pending_output);
+    ok = ok && wait_for_foreground_job(session);
     this_thread::sleep_for(chrono::milliseconds(100));
     ok = ok && write_all(session.terminal, string(1, static_cast<char>(26)));
     ok = ok && read_until(
@@ -229,8 +266,7 @@ bool test_pipeline_process_group(const string& shell_path) {
     bool ok = session.process > 0
         && read_until(session.terminal, "$ ", session.pending_output);
     ok = ok && write_all(session.terminal, command + "\n");
-    ok = ok && read_until(
-        session.terminal, "Args : while :; do :; done", session.pending_output);
+    ok = ok && wait_for_foreground_job(session);
     this_thread::sleep_for(chrono::milliseconds(100));
     ok = ok && write_all(session.terminal, string(1, static_cast<char>(26)));
     ok = ok && read_until(
@@ -280,6 +316,15 @@ int main(int argc, char** argv) {
     }
     if (!test_pipeline_process_group(argv[1])) {
         cerr << "FAIL: every stage of a pipeline should share one job group\n";
+        ++failures;
+    }
+
+    if (!test_explained_foreground_signal(argv[1], false)) {
+        cerr << "FAIL: explain should record interrupted foreground commands\n";
+        ++failures;
+    }
+    if (!test_explained_foreground_signal(argv[1], true)) {
+        cerr << "FAIL: explain should distinguish stopped jobs from completed commands\n";
         ++failures;
     }
 

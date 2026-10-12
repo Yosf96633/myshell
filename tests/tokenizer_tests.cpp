@@ -301,6 +301,43 @@ void test_background_pipelines() {
     expect_pipeline_error("&", "ampersand without a command");
 }
 
+void test_explain_prefix() {
+    auto prefix = pipeline_from(
+        "explain --verbose -- X=value echo 'a | b' | cat >out 2>&1",
+        "explain pipeline prefix");
+    if (prefix) {
+        expect(prefix->explain_requested && prefix->explain_verbose,
+               "prefix should preserve explanation mode");
+        expect(prefix->commands.size() == 2, "prefix covers the whole pipeline");
+        expect(prefix->commands[0].name == "echo"
+               && prefix->commands[0].arguments == vector<string>{"a | b"},
+               "prefix preserves quote grouping and literal pipe");
+        expect(prefix->commands[0].environment_assignments
+               == vector<EnvironmentAssignment>{{"X", "value"}},
+               "prefix preserves leading environment assignments");
+        expect(prefix->commands[1].redirections.size() == 2,
+               "prefix preserves ordered redirections on the correct stage");
+    }
+    for (const char* source : {"explain", "explain --verbose", "explain 2>errors", "explain >report"}) {
+        auto inspection = pipeline_from(source, "explain inspection");
+        if (inspection) {
+            expect(!inspection->explain_requested && inspection->commands[0].name == "explain",
+                   "bare explain and inspection redirections remain a builtin call");
+        }
+    }
+    auto leading = pipeline_from("explain >file echo hello", "leading target redirection");
+    if (leading) expect(leading->explain_requested && leading->commands[0].name == "echo",
+                        "leading target redirections are retained");
+    auto background = pipeline_from("explain echo hello &", "explained background command");
+    if (background) expect(background->explain_requested && background->background,
+                           "explain preserves background syntax");
+    auto assignments = pipeline_from("explain X=value", "explained persistent assignment");
+    if (assignments) expect(assignments->explain_requested && assignments->commands[0].name.empty(),
+                            "assignment-only targets keep their shell semantics");
+    expect_pipeline_error("explain echo 'unfinished", "explained quote error");
+    expect_pipeline_error("explain echo hi |", "explained missing pipeline stage");
+}
+
 } // namespace
 
 int main() {
@@ -312,6 +349,7 @@ int main() {
     test_command_errors();
     test_pipelines();
     test_background_pipelines();
+    test_explain_prefix();
 
     if (failure_count != 0) {
         cerr << failure_count << " tokenizer/parser test(s) failed\n";

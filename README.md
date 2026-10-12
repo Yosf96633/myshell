@@ -20,6 +20,7 @@ groups, and terminal ownership.
 - Concurrent pipelines with final-stage exit status reporting
 - External command lookup through `PATH` with a reusable command cache
 - Command aliases and simple single-line shell functions
+- Deterministic `explain` breakdowns with saved execution results
 - Session command history with basic arrow-key line editing
 - Interactive `Ctrl+C`, `Ctrl+\`, and `Ctrl+Z` handling
 - Foreground and background jobs with `&`, `jobs`, `fg`, and `bg`
@@ -55,6 +56,7 @@ The exact prompt values and process ID depend on the environment.
 | `declare -f\|-F [name ...]` | Displays shell-function definitions or names. |
 | `echo [arguments...]` | Prints its arguments separated by spaces. |
 | `exec [command [argument ...]]` | Replaces the shell or applies persistent redirections. |
+| `explain [--verbose] [--] [command ...]` | Runs and explains a whole command/pipeline, or explains the last execution without rerunning it. |
 | `exit [status]` | Exits with an explicit or previous command status. |
 | `fg [job]` | Continues a job in the foreground. |
 | `hash [options] [name ...]` | Displays or modifies the external-command path cache. |
@@ -68,6 +70,42 @@ The exact prompt values and process ID depend on the environment.
 Run `help` to list built-ins or `help <name>` for command-specific details.
 Alias values may contain multiple words when quoted, for example
 `alias ll='ls -l'`.
+
+## Explaining commands
+
+Use the unquoted `explain` prefix to execute a command normally, then see a
+plain-language breakdown and its recorded result:
+
+```sh
+explain cd /tmp
+explain cat access.log | grep '404' > errors.txt 2>&1
+explain --verbose NAME=world echo "hello $NAME"
+```
+
+The prefix covers the entire pipeline. Command redirections apply to the
+command, and the explanation appears after execution with the shell's output
+restored. Redirections are described left to right: `>file 2>&1` sends output
+and errors to the file; `2>&1 >file` keeps errors on the original output stream.
+Descriptors 0, 1, and 2 mean standard input, output, and error; other descriptors
+and descriptor closing are also supported.
+
+Enter `explain` at the next prompt to inspect the last execution without running
+it again. Repeated inspections keep that record and preserve `$?`.
+`explain --verbose` adds detail and shows all saved function steps. Records
+include the original source, arguments after expansion, aliases after
+resolution, command type, foreground pipeline stage statuses, and working
+directory changes. A syntax error is saved as a failed parse rather than
+showing an older command. Definitions are saved as registration results.
+
+Explanations use parser rules and execution records, with no AI or network
+calls. Familiar utility descriptions describe their usual purpose; arbitrary
+executables get a structural explanation of their arguments, connections, and
+status. Internal program actions and filesystem effects are not traced.
+Functions executed in the parent shell include their actual command steps;
+steps inside pipeline/background child processes are not transferred back.
+Background commands report launch status, not completion. Successful `exec`
+replaces the shell, so it cannot print an explanation afterward; persistent
+`exec` redirections also affect subsequent explanations.
 
 See the [roadmap](docs/ROADMAP.md) for planned project work.
 
@@ -112,6 +150,7 @@ The suite covers:
 
 - Tokenization, quoting, expansion, assignments, redirections, and pipelines
 - Exit statuses, external execution, environment behavior, and functions
+- Explain execution, saved records, alias/function resolution, pipes, and descriptor order
 - Interactive signals, process groups, terminal handoff, and job control
 
 The interactive tests use pseudo-terminals so they exercise the same terminal

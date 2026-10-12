@@ -3,6 +3,7 @@
 #include <sys/types.h>
 
 #include <string>
+#include <optional>
 #include <vector>
 
 // Prepare an interactive shell to own its terminal and manage foreground
@@ -23,7 +24,10 @@ int register_job(
     bool background);
 
 // Wait for a foreground job until it completes or stops.
-int wait_for_job(int job_id);
+int wait_for_job(
+    int job_id,
+    std::vector<std::optional<int>>* statuses = nullptr,
+    bool* completed = nullptr);
 
 // Reap and announce background state changes before displaying a prompt.
 void update_background_jobs();

@@ -11,6 +11,7 @@ add_executable(myshell
     src/main.cpp
     src/exec_builtin.cpp
     src/executor.cpp
+    src/explain.cpp
     src/functions.cpp
     src/history.cpp
     src/job_control.cpp
@@ -43,6 +44,11 @@ if(BUILD_TESTING)
         NAME shell_exit_status
         COMMAND shell_status_tests $<TARGET_FILE:myshell>
     )
+
+    add_executable(explain_tests tests/explain_tests.cpp)
+    target_compile_options(explain_tests PRIVATE -Wall -Wextra)
+    add_test(NAME shell_explain COMMAND explain_tests $<TARGET_FILE:myshell>)
+    set_tests_properties(shell_explain PROPERTIES TIMEOUT 30)
 
     add_executable(interactive_signal_tests tests/interactive_signal_tests.cpp)
     target_compile_options(interactive_signal_tests PRIVATE -Wall -Wextra)

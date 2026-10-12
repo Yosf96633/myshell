@@ -4,6 +4,7 @@
 #include "myshell/prompt.hpp"
 #include "myshell/builtins.hpp"
 #include "myshell/executor.hpp"
+#include "myshell/explain.hpp"
 #include "myshell/functions.hpp"
 #include "myshell/history.hpp"
 #include "myshell/job_control.hpp"
@@ -46,11 +47,13 @@ int main()
         {
             cerr << "myshell: syntax error: " << definition_error << '\n';
             set_shell_last_status(2);
+            remember_explanation_note(*line, definition_error, 2);
             continue;
         }
         if (definition_result == FunctionDefinitionResult::registered)
         {
             set_shell_last_status(0);
+            remember_explanation_note(*line, "Registered the shell function.", 0);
             continue;
         }
 
@@ -59,20 +62,12 @@ int main()
         {
             cerr << "myshell: syntax error: " << parsed.error << '\n';
             set_shell_last_status(2);
+            remember_explanation_note(*line, "Syntax error: " + parsed.error + "; nothing executed.", 2);
             continue;
         }
         if (!parsed.pipeline)
         {
             continue;
-        }
-        for (const auto& command : parsed.pipeline->commands) {
-            cout<<"Parsed command name : "<<command.name<<endl;
-            cout<<"Parsed command present : "<<command.present<<endl;
-            cout<<"Parsed error : "<<parsed.error<<endl;
-            for (auto const& args:command.arguments){
-                cout<<"Args : "<<args<<endl;
-            }
-            cout<<endl;
         }
         const int result = execute_pipeline(move(*parsed.pipeline));
         if (result == EXIT_SIGNAL)
