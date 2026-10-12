@@ -54,6 +54,7 @@ size_t count(const string& text, const string& pattern) {
 
 int main(int argc, char** argv) {
     if (argc != 2) return 2;
+    unsetenv("OPENAI_API_KEY"); // Never make paid requests in integration tests.
     const string executable = fs::absolute(argv[1]);
     char temporary[] = "/tmp/myshell-explain-tests-XXXXXX";
     const char* created = mkdtemp(temporary);
@@ -155,6 +156,27 @@ int main(int argc, char** argv) {
     result = run("explain cd /no-such-myshell-explain-directory\nexplain\n");
     expect(result.status == 1 && count(result.output, "Note:") == 2
            && contains(result, "Working directory unchanged"), "cd failure reason is saved");
+
+    result = run("explain -d /bin/ls -l\n");
+    expect(result.status == 0 && contains(result, "Detailed execution:")
+           && contains(result, "show a detailed listing"), "detail explains execution and familiar program flags");
+    result = run("explain -v echo hello | cat > diagram-file 2>&1\nexplain -b\n");
+    expect(result.status == 0 && read_file(directory / "diagram-file") == "hello\n"
+           && count(result.output, "ASCII flow") == 2 && contains(result, "pipe 1 -> 2"),
+           "visual prefix and -b inspection preserve execution and produce diagrams");
+    result = run("explain -dv /bin/sh -c 'printf once >> visual-counter'\nexplain -vd\n");
+    expect(result.status == 0 && read_file(directory / "visual-counter") == "once"
+           && count(result.output, "Detailed execution:") == 2 && count(result.output, "ASCII flow") == 2,
+           "combined flags and inspection execute the action exactly once");
+    result = run("explain -v /bin/sh -c 'echo out; echo err >&2' 2>&1 > visual-order\n");
+    expect(result.status == 0 && contains(result, "errors fd 2 ---> [shell output]")
+           && read_file(directory / "visual-order") == "out\n", "diagram captures descriptor-order destination");
+    result = run("explain --ai -dv /bin/false\nexplain --ai -d\nexit $?\n");
+    expect(result.status == 1 && count(result.output, "set OPENAI_API_KEY") == 2,
+           "AI failure preserves command status and saved execution");
+    result = run("explain -unknown /bin/sh -c 'printf bad > should-not-exist'\n");
+    expect(result.status == 2 && !fs::exists(directory / "should-not-exist"),
+           "invalid explain flags never execute their target");
 
     result = run("help explain\ntype explain\n");
     expect(result.status == 0 && contains(result, "explain is a shell builtin"), "builtin registration and help");

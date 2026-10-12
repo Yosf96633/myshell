@@ -1,4 +1,5 @@
 #include "myshell/tokenizer.hpp"
+#include "myshell/explain_options.hpp"
 #include "myshell/shell_state.hpp"
 
 #include <unistd.h>
@@ -365,18 +366,18 @@ PipelineParseResult parse_pipeline(const string& line) {
         && start + 7 < line.size()
         && isspace(static_cast<unsigned char>(line[start + 7]))) {
         size_t target = line.find_first_not_of(" \t\r\n", start + 7);
-        bool verbose = false;
-        auto consume = [&](const string& option) {
-            if (target == string::npos || line.compare(target, option.size(), option) != 0)
-                return false;
-            const size_t end = target + option.size();
-            if (end < line.size() && !isspace(static_cast<unsigned char>(line[end])))
-                return false;
-            target = line.find_first_not_of(" \t\r\n", end);
-            return true;
-        };
-        verbose = consume("--verbose");
-        const bool options_ended = consume("--");
+        ExplainOptions options;
+        bool options_ended = false;
+        while (target != string::npos) {
+            const size_t end = line.find_first_of(" \t\r\n", target);
+            const string word = line.substr(target, end - target);
+            const auto option = parse_explain_option(word, options);
+            if (option == ExplainOptionResult::invalid)
+                return {nullopt, "explain: unknown option " + word + "; usage: " + explain_usage};
+            if (option == ExplainOptionResult::operand || option == ExplainOptionResult::help) break;
+            target = end == string::npos ? string::npos : line.find_first_not_of(" \t\r\n", end);
+            if (option == ExplainOptionResult::end) { options_ended = true; break; }
+        }
         if (target != string::npos && line[target] != '|' && line[target] != '&'
             && (options_ended || line[target] != '-')) {
             auto parsed = parse_pipeline(line.substr(target));
@@ -390,7 +391,9 @@ PipelineParseResult parse_pipeline(const string& line) {
             if (!inspection_redirection) {
                 if (parsed.pipeline) {
                     parsed.pipeline->explain_requested = true;
-                    parsed.pipeline->explain_verbose |= verbose;
+                    parsed.pipeline->explain_verbose |= options.detail;
+                    parsed.pipeline->explain_visual |= options.visual;
+                    parsed.pipeline->explain_ai |= options.ai;
                 }
                 return parsed;
             }

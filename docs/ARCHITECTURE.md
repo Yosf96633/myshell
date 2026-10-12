@@ -114,7 +114,7 @@ use their exit code; signal termination uses `128 + signal`.
 
 ## Deterministic explanations
 
-The parser removes an unquoted `explain [--verbose] [--]` prefix before parsing
+The parser removes an unquoted `explain [-d] [-v|-b] [--ai] [--]` prefix before parsing
 and expanding the target pipeline. A bare `explain`, including inspection
 redirections, remains a registered built-in. Target commands use the same
 executor as ordinary input.
@@ -132,6 +132,20 @@ in memory for bare `explain`; inspection does not replace it or rerun the
 command. Syntax failures and function registrations also replace the saved
 record. Background records describe launch only, and child function steps are
 not transferred to the parent. Program internals are not traced.
+
+Detail and visual renderers share the execution record. Descriptor diagrams
+apply pipe connections first and explicit redirections in order, retaining
+stream destinations at the instant of duplication. The option parser is shared
+between prefix syntax and saved-execution inspection.
+
+`src/explain_ai.cpp` serializes bounded/redacted context and posts an opt-in
+request to the OpenAI Responses API using a directly executed `curl` process.
+The key and JSON body travel over a private pipe connected to curl's stdin;
+no shell is involved. Strict schema responses are validated with vendored
+nlohmann/json, cached in memory, and rendered as supplementary descriptions.
+The record retains authoritative statuses. Missing keys or provider failures
+fall back locally without changing execution status. Tests substitute a fake
+HTTPS client and fixtures, so they never require a key or make paid calls.
 
 ## Environment and command lookup
 
@@ -213,7 +227,7 @@ to know how prompts are drawn or keystrokes are decoded.
 
 ## Tests
 
-CTest builds four test executables:
+CTest runs five test suites:
 
 - `tokenizer_tests` checks parsing, quoting, expansion, redirection syntax,
   pipelines, assignments, and background syntax.
@@ -221,6 +235,9 @@ CTest builds four test executables:
   statuses plus environment behavior.
 - `explain_tests` verifies saved execution, aliases, functions, assignments,
   pipeline statuses, redirection order, failures, and inspection without reruns.
+- `explain_ai_tests` verifies request budgets, redaction, response validation,
+  the HTTPS subprocess boundary, caching, and provider failure fallback using
+  `fake_openai_client` instead of a live API.
 - `interactive_signal_tests` uses pseudo-terminals to verify control-character
   handling, process groups, stopping, background execution, and `jobs`/`fg`/`bg`.
 

@@ -56,7 +56,7 @@ The exact prompt values and process ID depend on the environment.
 | `declare -f\|-F [name ...]` | Displays shell-function definitions or names. |
 | `echo [arguments...]` | Prints its arguments separated by spaces. |
 | `exec [command [argument ...]]` | Replaces the shell or applies persistent redirections. |
-| `explain [--verbose] [--] [command ...]` | Runs and explains a whole command/pipeline, or explains the last execution without rerunning it. |
+| `explain [-d] [-v|-b] [--ai] [--] [command ...]` | Runs and explains a whole command/pipeline, or explains the last execution without rerunning it. |
 | `exit [status]` | Exits with an explicit or previous command status. |
 | `fg [job]` | Continues a job in the foreground. |
 | `hash [options] [name ...]` | Displays or modifies the external-command path cache. |
@@ -79,7 +79,9 @@ plain-language breakdown and its recorded result:
 ```sh
 explain cd /tmp
 explain cat access.log | grep '404' > errors.txt 2>&1
-explain --verbose NAME=world echo "hello $NAME"
+explain -d NAME=world echo "hello $NAME"
+explain -v echo hello | cat > /tmp/hello.txt
+explain -dv ls -l /tmp
 ```
 
 The prefix covers the entire pipeline. Command redirections apply to the
@@ -91,14 +93,18 @@ and descriptor closing are also supported.
 
 Enter `explain` at the next prompt to inspect the last execution without running
 it again. Repeated inspections keep that record and preserve `$?`.
-`explain --verbose` adds detail and shows all saved function steps. Records
+`explain -d` adds execution location, expanded argument descriptions, final
+file descriptor destinations, restoration behavior, and all saved function
+steps. `--detail` and the original `--verbose` are aliases for `-d`.
+`explain -v` draws an ASCII diagram; `-b` and `--visual` are aliases. Combine
+flags as `-dv`, or use them with a target command. Without a target, these
+flags change how the saved execution is displayed without rerunning it. Records
 include the original source, arguments after expansion, aliases after
 resolution, command type, foreground pipeline stage statuses, and working
 directory changes. A syntax error is saved as a failed parse rather than
 showing an older command. Definitions are saved as registration results.
 
-Explanations use parser rules and execution records, with no AI or network
-calls. Familiar utility descriptions describe their usual purpose; arbitrary
+Local explanations use parser rules and execution records, with no API calls. Familiar utility descriptions describe their usual purpose; arbitrary
 executables get a structural explanation of their arguments, connections, and
 status. Internal program actions and filesystem effects are not traced.
 Functions executed in the parent shell include their actual command steps;
@@ -106,6 +112,60 @@ steps inside pipeline/background child processes are not transferred back.
 Background commands report launch status, not completion. Successful `exec`
 replaces the shell, so it cannot print an explanation afterward; persistent
 `exec` redirections also affect subsequent explanations.
+
+### Optional OpenAI explanations
+
+C++ sends a request to the OpenAI Responses API through the `curl` HTTPS client.
+AI mode is explicit: `--ai` (or `-a`) adds an explanation to the recorded local
+facts. `-d` and diagrams work offline and do not require a key.
+
+Set the key in your **Bash terminal before launching myShell**. A hidden prompt
+keeps the actual key out of the command you type:
+
+```bash
+read -rs -p 'OpenAI API key: ' OPENAI_API_KEY
+export OPENAI_API_KEY
+./build/myshell
+```
+
+Then, inside myShell:
+
+```sh
+explain --ai -d ls -l /tmp
+explain --ai -dv echo hello | cat > /tmp/hello.txt 2>&1
+explain --ai -d
+```
+
+The default model is `gpt-4.1-mini`; set `MYSHELL_EXPLAIN_MODEL` before launch
+(or with a persistent shell assignment) to use another Responses model that
+supports strict structured outputs. API access and billing are separate from
+ChatGPT subscriptions.
+
+Each request contains at most 8,000 bytes of compact command/trace context,
+including the saved command, a bounded set of arguments and ordered
+redirections, statuses, working directory changes, a few function steps, and
+up to three recent commands saved at execution time. Inputs may be clipped.
+It excludes file contents, program output, and a full environment dump. The
+configured API key and common secret assignments/options are redacted;
+command text may still contain other private information, so use `--ai` only
+for context you intend to send to OpenAI.
+
+Requests use `store: false` and strict JSON-schema output, with an output limit
+of 900 tokens (1,800 with `-d`). The client validates the returned fields and
+renders the summary, steps, expected behavior, and caveats in the terminal.
+Diagrams remain derived from the recorded descriptor setup. Identical requests
+are cached in memory (up to 16 entries); new requests consume API tokens.
+
+Missing credentials, HTTP errors, timeouts, refusals, or malformed responses
+retain the local explanation and the executed command's exit status. The
+request has a 5-second connection timeout and a 30-second total timeout;
+Ctrl+C cancels an interactive request. Credentials travel over a private pipe,
+not shell commands, process arguments, or temporary files.
+
+`curl` must be available at runtime for AI mode. JSON parsing uses the vendored
+nlohmann/json 3.11.3 header; its MIT license is included under
+`include/third_party/nlohmann/`. No package installation or network download is
+needed to build.
 
 See the [roadmap](docs/ROADMAP.md) for planned project work.
 
@@ -150,7 +210,8 @@ The suite covers:
 
 - Tokenization, quoting, expansion, assignments, redirections, and pipelines
 - Exit statuses, external execution, environment behavior, and functions
-- Explain execution, saved records, alias/function resolution, pipes, and descriptor order
+- Explain execution, detail/ASCII modes, alias/function resolution, pipes, and descriptor order
+- OpenAI request/schema fixtures, context limits, secret redaction, caching, and failure fallback
 - Interactive signals, process groups, terminal handoff, and job control
 
 The interactive tests use pseudo-terminals so they exercise the same terminal

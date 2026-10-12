@@ -12,6 +12,7 @@ add_executable(myshell
     src/exec_builtin.cpp
     src/executor.cpp
     src/explain.cpp
+    src/explain_ai.cpp
     src/functions.cpp
     src/history.cpp
     src/job_control.cpp
@@ -25,6 +26,12 @@ add_executable(myshell
     src/path_search.cpp
 )
 
+find_program(MYSHELL_CURL_EXECUTABLE curl)
+if(NOT MYSHELL_CURL_EXECUTABLE)
+    set(MYSHELL_CURL_EXECUTABLE "/usr/bin/curl")
+    message(STATUS "curl was not found; local explain modes work, AI mode needs curl at runtime")
+endif()
+target_compile_definitions(myshell PRIVATE MYSHELL_CURL_EXECUTABLE="${MYSHELL_CURL_EXECUTABLE}")
 target_include_directories(myshell PRIVATE include)
 target_compile_options(myshell PRIVATE -Wall -Wextra)
 
@@ -49,6 +56,17 @@ if(BUILD_TESTING)
     target_compile_options(explain_tests PRIVATE -Wall -Wextra)
     add_test(NAME shell_explain COMMAND explain_tests $<TARGET_FILE:myshell>)
     set_tests_properties(shell_explain PROPERTIES TIMEOUT 30)
+
+    add_executable(fake_openai_client tests/fake_openai_client.cpp)
+    target_include_directories(fake_openai_client PRIVATE include)
+    target_compile_options(fake_openai_client PRIVATE -Wall -Wextra)
+    add_executable(explain_ai_tests tests/explain_ai_tests.cpp src/explain_ai.cpp)
+    target_include_directories(explain_ai_tests PRIVATE include)
+    target_compile_options(explain_ai_tests PRIVATE -Wall -Wextra)
+    target_compile_definitions(explain_ai_tests PRIVATE MYSHELL_CURL_EXECUTABLE="$<TARGET_FILE:fake_openai_client>")
+    add_dependencies(explain_ai_tests fake_openai_client)
+    add_test(NAME shell_explain_ai COMMAND explain_ai_tests)
+    set_tests_properties(shell_explain_ai PROPERTIES TIMEOUT 30)
 
     add_executable(interactive_signal_tests tests/interactive_signal_tests.cpp)
     target_compile_options(interactive_signal_tests PRIVATE -Wall -Wextra)

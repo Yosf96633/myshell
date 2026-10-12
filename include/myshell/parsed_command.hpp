@@ -40,6 +40,8 @@ struct ParsedPipeline {
     bool background = false;
     bool explain_requested = false;
     bool explain_verbose = false;
+    bool explain_visual = false;
+    bool explain_ai = false;
 
     bool empty() const {
         return commands.empty();

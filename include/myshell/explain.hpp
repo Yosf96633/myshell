@@ -20,6 +20,7 @@ struct ExecutionExplanation {
     std::string directory_before;
     std::string directory_after;
     std::string note;
+    std::vector<std::string> recent_history;
     int status = 0;
     bool job_completed = true;
 };

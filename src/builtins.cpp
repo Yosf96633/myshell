@@ -557,12 +557,13 @@ const vector<BuiltinHelp>& help_topics() {
          "Use -f to display definitions or -F to display function names."},
         {"echo", "echo [argument ...]", "Write arguments to standard output.",
          "Display the arguments separated by one space, followed by a newline."},
-        {"explain", "explain [--verbose] [--] [command ...]",
+        {"explain", "explain [-d] [-v|-b] [--ai] [--] [command ...]",
          "Run a command and explain it, or explain the last execution.",
          "The prefix covers the whole pipeline. Without a command, describe "
-         "the saved execution without running it again. Use --verbose for "
-         "expanded arguments and extra detail. Explanations use deterministic "
-         "parser and execution records."},
+         "the saved execution without running it again. Use -d for detail, "
+         "-v or -b for an ASCII diagram, and --ai for an OpenAI explanation. "
+         "--verbose is an alias for -d. AI mode requires OPENAI_API_KEY; local "
+         "modes use deterministic parser and execution records."},
         {"exit", "exit [status]", "Exit the shell.",
          "Stop the shell using STATUS, or the most recent command status when "
          "STATUS is omitted."},

@@ -2,6 +2,9 @@
 
 #include "myshell/builtins.hpp"
 #include "myshell/functions.hpp"
+#include "myshell/history.hpp"
+#include "myshell/explain_options.hpp"
+#include "myshell/explain_ai.hpp"
 #include "myshell/shell_state.hpp"
 
 #include <unistd.h>
@@ -116,6 +119,153 @@ string purpose(const ExplainedStage& stage) {
     return "runs the executable with the shown arguments";
 }
 
+map<int, string> final_destinations(const ExecutionExplanation& record, size_t index) {
+    map<int, string> streams = {
+        {0, index == 0 ? "shell input" : "pipe " + to_string(index) + " -> " + to_string(index + 1)},
+        {1, index + 1 == record.stages.size() ? "shell output"
+            : "pipe " + to_string(index + 1) + " -> " + to_string(index + 2)},
+        {2, "shell errors"},
+    };
+    for (const auto& redirect : record.stages[index].command.redirections) {
+        switch (redirect.type) {
+        case RedirectionType::input:
+            streams[redirect.target_fd] = "file " + quote(redirect.path) + " (read)"; break;
+        case RedirectionType::output:
+            streams[redirect.target_fd] = "file " + quote(redirect.path) + " (replace)"; break;
+        case RedirectionType::append:
+            streams[redirect.target_fd] = "file " + quote(redirect.path) + " (append)"; break;
+        case RedirectionType::duplicate: {
+            const auto source = streams.find(redirect.source_fd);
+            streams[redirect.target_fd] = source == streams.end()
+                ? "inherited fd " + to_string(redirect.source_fd) : source->second;
+            break;
+        }
+        case RedirectionType::close: streams[redirect.target_fd] = "closed"; break;
+        }
+    }
+    return streams;
+}
+
+string argument_meaning(const ExplainedStage& stage, const string& argument) {
+    if (stage.kind == "shell function") return "passed to the function (this shell does not expand positional parameters)";
+    if (stage.command.name == "cd" && stage.kind == "built-in") return "directory to make current; relative paths start from the previous working directory";
+    if (stage.command.name == "echo" && stage.kind == "built-in") return "literal text printed by this shell's echo builtin";
+    string name = stage.command.name;
+    const size_t slash = name.find_last_of('/');
+    if (slash != string::npos) name = name.substr(slash + 1);
+    static const map<string, map<string, string>> options = {
+        {"ls", {{"-l", "usual ls option: show a detailed listing"}, {"-a", "usual ls option: include hidden entries"},
+                {"-h", "usual ls option: human-readable sizes"}, {"-R", "usual ls option: recursively list directories"}}},
+        {"grep", {{"-i", "usual grep option: ignore letter case"}, {"-n", "usual grep option: include line numbers"},
+                  {"-v", "usual grep option: select nonmatching lines"}, {"-E", "usual grep option: extended regular expressions"},
+                  {"-F", "usual grep option: fixed-string patterns"}, {"-c", "usual grep option: count matching lines"}}},
+        {"cat", {{"-n", "usual cat option: number output lines"}, {"-b", "usual cat option: number nonempty lines"}}},
+        {"sort", {{"-n", "usual sort option: numeric order"}, {"-r", "usual sort option: reverse order"},
+                  {"-u", "usual sort option: remove duplicate output lines"}}},
+        {"wc", {{"-l", "usual wc option: count lines"}, {"-w", "usual wc option: count words"},
+                {"-c", "usual wc option: count bytes"}}},
+    };
+    if (stage.kind == "external executable") {
+        const auto command = options.find(name);
+        if (command != options.end()) {
+            const auto option = command->second.find(argument);
+            if (option != command->second.end()) return option->second;
+        }
+        return "passed to the executable; program-specific interpretation is not traced";
+    }
+    return "passed to the builtin after shell expansion and quote removal";
+}
+
+void print_stage_detail(const ExecutionExplanation& record, size_t index, const string& indent) {
+    const auto& stage = record.stages[index];
+    const auto& command = stage.command;
+    cout << indent << "     Detailed execution:\n";
+    if (!stage.observed) {
+        cout << indent << "       Dispatch was not reached; the shown syntax is not proof that the command ran.\n";
+        return;
+    }
+    const bool child = record.pipeline.background || record.stages.size() > 1;
+    if (child) {
+        cout << indent << "       This stage runs in a child of the shell. All pipeline stages share a job process group.\n"
+             << indent << (record.stages.size() > 1
+                 ? "       Pipes carry bytes between concurrently running stages; they do not pass argument lists.\n"
+                 : "       Background execution returns to the prompt without waiting for completion.\n");
+    } else if (stage.kind == "external executable") {
+        cout << indent << "       The shell launches a child process and waits for its foreground job to finish or stop.\n";
+    } else {
+        cout << indent << "       This command runs in the current shell; directory and function state changes can persist.\n";
+    }
+    if (stage.kind == "external executable") {
+        cout << indent << "       Executable lookup: " << (command.name.find('/') == string::npos
+            ? "search the effective PATH or reuse the command cache.\n"
+            : "use the supplied pathname directly, without PATH lookup.\n");
+    }
+    cout << indent << "       Expanded argument count: " << command.arguments.size() << ".\n";
+    for (size_t i = 0; i < command.arguments.size(); ++i) {
+        cout << indent << "       Argument " << i + 1 << ": " << quote(command.arguments[i])
+             << " - " << argument_meaning(stage, command.arguments[i]) << ".\n";
+    }
+    if (command.arguments.empty()) cout << indent << "       No arguments were supplied after the command name.\n";
+    if (!command.redirections.empty()) {
+        cout << indent << "       Redirections apply left to right after pipe connections, before the command body runs.\n"
+             << indent << "       Opening an output file may create or truncate it even if the command later fails.\n";
+    }
+    cout << indent << "       Final descriptor setup (requested):\n";
+    for (const auto& [fd, destination] : final_destinations(record, index)) {
+        cout << indent << "         " << descriptor(fd) << " -> " << destination << '\n';
+    }
+    if (!child && command.name != "exec" && !command.redirections.empty())
+        cout << indent << "       Command redirections are temporary; the shell restores its descriptors afterward.\n";
+    if (!command.environment_assignments.empty())
+        cout << indent << "       Leading assignments " << (command.name.empty()
+            ? "remain in the shell environment.\n" : "are scoped to this command and restored afterward in the parent.\n");
+    if (stage.kind == "shell function") {
+        cout << indent << "       The function body is parsed when called, so its expansions use execution-time state.\n";
+        if (child) cout << indent << "       Internal child function steps are not transferred back to this record.\n";
+    }
+    if (command.name == "jobs" && stage.kind == "built-in")
+        cout << indent << "       jobs lists tracked running/stopped jobs; its own status does not describe every listed job.\n";
+    if ((command.name == "fg" || command.name == "bg") && stage.kind == "built-in")
+        cout << indent << "       fg gives the selected job the terminal and waits; bg resumes it without taking the terminal.\n";
+    if (stage.status) cout << indent << "       Recorded status " << *stage.status
+        << ": " << (*stage.status == 0 ? "the command reported success; this is not a trace of all its internal actions.\n"
+                                       : "a nonzero result; consult any recorded note or the command's own error output.\n");
+}
+
+void print_visual(const ExecutionExplanation& record, const string& indent = "") {
+    cout << indent << "ASCII flow (requested connections; recorded results below):\n";
+    if (record.stages.empty()) {
+        cout << indent << "  [input] ---> [" << quote(record.note) << "]\n";
+        return;
+    }
+    cout << indent << (record.pipeline.background ? "  [background job]\n" : "  [foreground execution]\n");
+    for (size_t i = 0; i < record.stages.size(); ++i) {
+        const auto& stage = record.stages[i];
+        string label = "#" + to_string(i + 1) + " " + command_words(stage.command) + " [" + stage.kind + "]";
+        if (label.size() > 96) label = label.substr(0, 93) + "...";
+        const string border(label.size() + 2, '-');
+        cout << indent << "  +" << border << "+\n"
+             << indent << "  | " << label << " |\n"
+             << indent << "  +" << border << "+\n";
+        for (const auto& [fd, destination] : final_destinations(record, i)) {
+            cout << indent << "    " << (fd == 0 ? "input  " : fd == 1 ? "output " : fd == 2 ? "errors " : "extra  ")
+                 << "fd " << fd << (fd == 0 ? " <--- " : " ---> ") << '[' << destination << "]\n";
+        }
+        cout << indent << "    status: " << (stage.status ? to_string(*stage.status) : "not recorded") << '\n';
+        if (i + 1 < record.stages.size()) cout << indent << "             |\n" << indent << "             v\n";
+    }
+    if (record.directory_before != record.directory_after)
+        cout << indent << "  [cwd " << quote(record.directory_before) << "] ---> [cwd "
+             << quote(record.directory_after) << "]\n";
+    if (record.pipeline.background) cout << indent << "  [launch status " << record.status << "; completion not recorded]\n";
+    else cout << indent << "  [shell status " << record.status
+              << (record.job_completed ? "]\n" : "; job incomplete]\n");
+    for (const auto& child : record.children) {
+        cout << indent << "  Function step:\n";
+        print_visual(child, indent + "    ");
+    }
+}
+
 void print_record(const ExecutionExplanation& record, bool verbose, const string& indent) {
     cout << indent << "Explain: " << quote(record.pipeline.source) << '\n';
     if (!record.note.empty()) cout << indent << "  Note: " << quote(record.note) << '\n';
@@ -187,8 +337,7 @@ void print_record(const ExecutionExplanation& record, bool verbose, const string
                  << (*stage.status == 0 ? " (success).\n" : " (nonzero).\n");
         }
         if (verbose) {
-            cout << indent << "     Expanded argument count: " << command.arguments.size()
-                 << "; redirections apply left to right after pipe connections.\n";
+            print_stage_detail(record, i, indent);
         }
     }
     size_t shown = 0;
@@ -226,6 +375,10 @@ void print_record(const ExecutionExplanation& record, bool verbose, const string
 ExplanationFrame::ExplanationFrame(const ParsedPipeline& pipeline) : parent_(active) {
     record_.pipeline = pipeline;
     record_.directory_before = current_directory();
+    // Save history with the execution so later inspection requests are stable.
+    const size_t history_end = command_history.empty() ? 0 : command_history.size() - 1;
+    const size_t history_start = history_end > 3 ? history_end - 3 : 0;
+    for (size_t i = history_start; i < history_end; ++i) record_.recent_history.push_back(command_history[i]);
     for (const auto& command : pipeline.commands) {
         record_.stages.push_back({command, "not dispatched", false, nullopt});
     }
@@ -241,7 +394,11 @@ void ExplanationFrame::finish(int status) {
     record_.directory_after = current_directory();
     if (record_.job_completed && !record_.pipeline.background && record_.stages.size() == 1
         && !record_.stages[0].status) record_.stages[0].status = record_.status;
-    if (record_.pipeline.explain_requested) print_record(record_, record_.pipeline.explain_verbose, "");
+    if (record_.pipeline.explain_requested) {
+        print_record(record_, record_.pipeline.explain_verbose, "");
+        if (record_.pipeline.explain_visual) print_visual(record_);
+        if (record_.pipeline.explain_ai) print_ai_explanation(record_, record_.pipeline.explain_verbose);
+    }
     if (!inspection_) {
         if (parent_ != nullptr) parent_->children.push_back(move(record_));
         else last_execution = move(record_);
@@ -277,23 +434,31 @@ void remember_explanation_note(const string& source, const string& note, int sta
 }
 
 int builtin_explain(const vector<string>& arguments) {
-    bool verbose = false;
-    if (arguments == vector<string>{"--help"}) {
-        cout << "Usage: explain [--verbose] [--] [command ...]\n"
-             << "Run and explain the entire command/pipeline, or explain the last execution without rerunning it.\n";
-        return 0;
-    }
-    if (arguments == vector<string>{"--verbose"}
-        || arguments == vector<string>{"--verbose", "--"}) verbose = true;
-    else if (!arguments.empty() && arguments != vector<string>{"--"}) {
-        cerr << "explain: usage: explain [--verbose] [--] [command ...]\n";
-        return 2;
+    ExplainOptions options;
+    bool options_ended = false;
+    for (const auto& argument : arguments) {
+        const auto result = options_ended ? ExplainOptionResult::operand : parse_explain_option(argument, options);
+        if (result == ExplainOptionResult::end) { options_ended = true; continue; }
+        if (result == ExplainOptionResult::help) {
+            cout << "Usage: " << explain_usage << '\n'
+                 << "  -d, --detail, --verbose  Detailed explanation and all saved function steps.\n"
+                 << "  -v, -b, --visual         ASCII diagram of commands and file descriptors.\n"
+                 << "  -a, --ai                Add an OpenAI explanation (requires OPENAI_API_KEY).\n"
+                 << "Without a command, inspect the saved execution without rerunning it.\n";
+            return 0;
+        }
+        if (result != ExplainOptionResult::accepted) {
+            cerr << "explain: usage: " << explain_usage << '\n';
+            return 2;
+        }
     }
     if (!last_execution) {
         cerr << "explain: no previous execution to explain\n";
         return 1;
     }
-    print_record(*last_execution, verbose, "");
-    // Inspection preserves $? from the command being inspected.
+    print_record(*last_execution, options.detail, "");
+    if (options.visual) print_visual(*last_execution);
+    if (options.ai) print_ai_explanation(*last_execution, options.detail);
+    // An explanation failure never changes the status of the inspected action.
     return shell_last_status();
 }

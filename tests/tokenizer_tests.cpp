@@ -334,6 +334,13 @@ void test_explain_prefix() {
     auto assignments = pipeline_from("explain X=value", "explained persistent assignment");
     if (assignments) expect(assignments->explain_requested && assignments->commands[0].name.empty(),
                             "assignment-only targets keep their shell semantics");
+    auto modes = pipeline_from("explain -dv --ai echo test | cat", "combined explain modes");
+    if (modes) expect(modes->explain_requested && modes->explain_verbose
+                      && modes->explain_visual && modes->explain_ai,
+                      "detail, visual and AI flags cover the entire target pipeline");
+    auto alias_flag = pipeline_from("explain -b echo test", "visual alias flag");
+    if (alias_flag) expect(alias_flag->explain_visual, "-b is a visual alias");
+    expect_pipeline_error("explain --unknown echo test", "unknown explain option");
     expect_pipeline_error("explain echo 'unfinished", "explained quote error");
     expect_pipeline_error("explain echo hi |", "explained missing pipeline stage");
 }
